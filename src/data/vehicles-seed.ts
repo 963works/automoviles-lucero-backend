@@ -14,7 +14,8 @@ export type Vehicle = {
   id: string;
   ref_cochesnet: string | null;
   ref_wallapop: string | null;
-  category: "Monovolumen" | "Berlina" | "Industriales" | "4x4" | "Familiar";
+  ref_dealcar?: string | null; // referencia interna de Dealcar (si el vehículo viene de ese feed, ver scripts/import-dealcar.mjs)
+  category: "Monovolumen" | "Berlina" | "Industriales" | "4x4" | "Familiar" | "Coupé" | "Cabrio" | "Otro";
   make: string;
   model: string;
   version: string;

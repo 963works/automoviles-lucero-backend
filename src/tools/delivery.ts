@@ -2,18 +2,19 @@ import { appendToCollection, readCollection, writeCollection } from "../store.js
 import { envelope } from "../response.js";
 import { businessInfo } from "../data/business-info.js";
 import { currentVehicles } from "../data/vehicles-current.js";
+import { isWhatsappConnected, sendWhatsappText } from "../integrations/whatsapp.js";
 
 function now() {
   return new Date().toISOString();
 }
 
-// send_internal_summary, send_vehicle_link, send_location, send_whatsapp,
-// notify_salesperson: ninguno tiene un canal de envío real conectado
-// todavía (el WhatsApp del negocio está confirmado como número, Sección 1,
-// pero no hay integración técnica de envío). Por disciplina de "nunca
-// afirmar entregado sin confirmación", TODOS devuelven "queued"/"denied",
-// nunca "sent" ni "delivered", hasta que se conecte un destino real (n8n +
-// WhatsApp Business Platform).
+// send_vehicle_link, send_whatsapp, notify_salesperson: envían de verdad por
+// WhatsApp Cloud API cuando hay credenciales conectadas (isWhatsappConnected()).
+// send_internal_summary sigue sin destino real (no hay a dónde mandarlo todavía).
+// Por disciplina de "nunca afirmar entregado sin confirmación": si la API de
+// Meta devuelve error (p. ej. más de 24h desde el último mensaje del cliente,
+// regla de Meta para texto libre) se propaga el error real y se marca
+// "failed"/"denied", nunca "sent" sin que la API lo haya confirmado.
 
 export function sendInternalSummary(args: { summary_text: string; structured_fields?: Record<string, unknown> }) {
   const record = { id: crypto.randomUUID(), ...args, delivery_status: "queued" as const, created_at: now() };
@@ -32,18 +33,36 @@ export function sendInternalSummary(args: { summary_text: string; structured_fie
 // es un enlace real, solo que no apunta al anuncio concreto (Sección 30:
 // "enviarle también un enlace con nuestra página de venta para que pueda
 // ver todo"). Nunca inventamos una URL individual que no exista.
-export function sendVehicleLink(args: { lead_phone?: string; vehicle_id?: string; channel?: string }) {
+export async function sendVehicleLink(args: { lead_phone?: string; vehicle_id?: string; channel?: string }) {
   const vehicle = args.vehicle_id ? currentVehicles().find((v) => v.id === args.vehicle_id) : undefined;
   const url = vehicle?.ref_cochesnet ?? businessInfo.profiles.cochesnet;
   const isIndividual = Boolean(vehicle?.ref_cochesnet);
+  const individualWarning = isIndividual ? [] : ["No hay URL individual confirmada para este vehículo -- se usa el enlace general del catálogo en su lugar, dilo así si el cliente pregunta por el enlace concreto."];
   const record = { id: crypto.randomUUID(), ...args, url, is_individual_url: isIndividual, delivery_status: "queued" as const, created_at: now() };
+
+  if (args.channel === "whatsapp" && isWhatsappConnected() && args.lead_phone) {
+    const result = await sendWhatsappText(args.lead_phone, url);
+    if (result.ok) {
+      appendToCollection("vehicle_link_sends", { ...record, delivery_status: "sent" as const, message_id: result.messageId });
+      return envelope({ status: "ok", data: { ...record, delivery_status: "sent", message_id: result.messageId }, source: "WhatsApp Cloud API", conflicts: individualWarning });
+    }
+    appendToCollection("vehicle_link_sends", { ...record, delivery_status: "failed" as const, error: result.error });
+    return envelope({
+      status: "denied",
+      data: { ...record, delivery_status: "failed" },
+      error_code: "whatsapp_send_failed",
+      source: "WhatsApp Cloud API",
+      conflicts: [...individualWarning, `El envío por WhatsApp falló: ${result.error}. No se ha entregado.`],
+    });
+  }
+
   appendToCollection("vehicle_link_sends", record);
   return envelope({
     status: "denied",
     data: record,
     error_code: "no_destination_configured",
     source: "cola interna, sin canal de envío confirmado",
-    conflicts: isIndividual ? [] : ["No hay URL individual confirmada para este vehículo -- se usa el enlace general del catálogo en su lugar, dilo así si el cliente pregunta por el enlace concreto."],
+    conflicts: individualWarning,
   });
 }
 
@@ -61,8 +80,25 @@ export function sendLocation() {
   });
 }
 
-export function sendWhatsapp(args: { lead_phone?: string; message?: string }) {
+export async function sendWhatsapp(args: { lead_phone?: string; message?: string }) {
   const record = { id: crypto.randomUUID(), ...args, delivery_status: "queued" as const, created_at: now() };
+
+  if (isWhatsappConnected() && args.lead_phone && args.message) {
+    const result = await sendWhatsappText(args.lead_phone, args.message);
+    if (result.ok) {
+      appendToCollection("whatsapp_queue", { ...record, delivery_status: "sent" as const, message_id: result.messageId });
+      return envelope({ status: "ok", data: { ...record, delivery_status: "sent", message_id: result.messageId }, source: "WhatsApp Cloud API", conflicts: [] });
+    }
+    appendToCollection("whatsapp_queue", { ...record, delivery_status: "failed" as const, error: result.error });
+    return envelope({
+      status: "denied",
+      data: { ...record, delivery_status: "failed" },
+      error_code: "whatsapp_send_failed",
+      source: "WhatsApp Cloud API",
+      conflicts: [`El envío falló: ${result.error}. No se ha entregado -- posible causa: han pasado más de 24h desde el último mensaje del cliente (regla de Meta para texto libre fuera de plantilla).`],
+    });
+  }
+
   appendToCollection("whatsapp_queue", record);
   return envelope({
     status: "denied",
@@ -74,9 +110,12 @@ export function sendWhatsapp(args: { lead_phone?: string; message?: string }) {
 }
 
 // notify_salesperson (Sección 47): formato fijo para leads HOT o
-// incidencias urgentes. Igual que el resto, queda en cola -- el envío real
-// (WhatsApp/Telegram a Ramón o José) es una automatización pendiente.
-export function notifySalesperson(args: {
+// incidencias urgentes. Se envía por WhatsApp a los números personales de
+// Ramón y José (confirmados en business-info.ts, responsables.*.transfer_number)
+// cuando hay integración conectada -- a los dos, porque transfer_priority ya
+// trata a cualquiera de los dos como válido para atender. Si falla para
+// alguno, queda registrado como tal -- nunca se asume que lo vieron.
+export async function notifySalesperson(args: {
   name?: string;
   phone?: string;
   vehicle?: string;
@@ -99,6 +138,35 @@ export function notifySalesperson(args: {
     `Resumen: ${args.summary ?? "sin resumen"}`;
 
   const record = { id: crypto.randomUUID(), ...args, formatted, delivery_status: "queued" as const, created_at: now() };
+
+  if (isWhatsappConnected()) {
+    const recipients = [
+      { name: "Ramón", phone: businessInfo.responsables.ramon.transfer_number },
+      { name: "José", phone: businessInfo.responsables.jose.transfer_number },
+    ];
+    const results = await Promise.all(recipients.map((r) => sendWhatsappText(r.phone, formatted).then((res) => ({ ...r, res }))));
+    const sentTo = results.filter((r) => r.res.ok).map((r) => r.name);
+    const failedTo = results.filter((r) => !r.res.ok).map((r) => `${r.name} (${(r.res as { error: string }).error})`);
+
+    appendToCollection("salesperson_notifications", { ...record, delivery_status: sentTo.length > 0 ? ("sent" as const) : ("failed" as const), sent_to: sentTo, failed_to: failedTo });
+
+    if (sentTo.length > 0) {
+      return envelope({
+        status: "ok",
+        data: { ...record, sent_to: sentTo },
+        source: "WhatsApp Cloud API",
+        conflicts: failedTo.length > 0 ? [`No se pudo notificar a: ${failedTo.join(", ")}.`] : [],
+      });
+    }
+    return envelope({
+      status: "denied",
+      data: { ...record, failed_to: failedTo },
+      error_code: "whatsapp_send_failed",
+      source: "WhatsApp Cloud API",
+      conflicts: [`No se pudo notificar a nadie: ${failedTo.join(", ")}. No digas que Ramón o José ya lo saben.`],
+    });
+  }
+
   appendToCollection("salesperson_notifications", record);
   return envelope({
     status: "denied",

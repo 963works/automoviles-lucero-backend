@@ -30,8 +30,8 @@ const HANDLERS: Record<string, (args: any) => unknown> = {
   create_service_request: (a) => createServiceRequest(a),
   create_handoff: (a) => createHandoff(a),
   // En el chat el enlace viaja dentro de la respuesta, así que sí se entrega.
-  send_vehicle_link: (a) => {
-    const r = sendVehicleLink(a) as unknown as { data: { url: string; is_individual_url: boolean }; conflicts: string[] };
+  send_vehicle_link: async (a) => {
+    const r = (await sendVehicleLink(a)) as unknown as { data: { url: string; is_individual_url: boolean }; conflicts: string[] };
     return {
       status: "ok",
       data: { url: r.data.url, is_individual_url: r.data.is_individual_url },
