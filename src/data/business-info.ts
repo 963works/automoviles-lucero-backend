@@ -143,9 +143,12 @@ export const businessInfo = {
   ],
   sale_confirmation_rule: "La IA nunca marca SOLD solo porque el cliente diga que compra. Flujo: HOT -> Ramón/José -> operación confirmada -> SOLD.",
   inventory_sources: { primary: ["coches.net", "wallapop"], integration_status: "PENDING_INTEGRATION -- sin API/acceso autorizado. No inventar endpoints ni hacer scraping agresivo. Fuente intermedia actual: catálogo cargado internamente (ver vehicles-seed.ts)." },
+  // Resuelto 09/10/2026: Miguel atiende el teléfono 24h (decisión de Eliud). Las
+  // citas que ofrece siguen cayendo solo dentro del horario real vía Google
+  // Calendar -- eso no cambia, solo afecta a si se contesta la llamada o no.
+  phone_hours: "24h",
   pending_from_owner: [
     "Acceso de lectura real a Coches.net/Wallapop (Eliud lo pedirá directamente, fuera de esta llamada)",
-    "Número de transferencia COMPLETO de José (solo se capturó '624...' en llamada real)",
     "Número de cuenta bancaria (IBAN) real para instrucciones de pago de reservas",
     "Tipo de cuenta de WhatsApp (App o Business Platform) y si conserva historial",
     "Precio de transferencia de vehículo",
@@ -153,8 +156,7 @@ export const businessInfo = {
     "Discrepancias de vehículos observadas entre coches.net y Wallapop (ver conflicts por unidad)",
     "Confirmación de si el proveedor de financiación sigue siendo Lendrock",
     "Resolver la contradicción de umbrales de financiación (ver financing.unresolved_conflict)",
-    "Número de teléfono nuevo a comprar para conectar el agente de voz (Eliud gestiona esto, no Ramón)",
+    "Número de teléfono nuevo a comprar para conectar el agente de voz (Eliud gestiona esto, no Ramón) -- prioridad para mañana",
     "Quién paga el número nuevo y el consumo de llamadas",
-    "Si la IA debe atender el teléfono 24h o solo en horario de oficina (las citas que ofrezca siempre deben caer dentro del horario confirmado, eso ya está resuelto)",
   ],
 };
