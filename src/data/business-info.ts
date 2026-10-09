@@ -65,7 +65,7 @@ export const businessInfo = {
       no_down_payment_possible: true,
     },
     unresolved_conflict:
-      "En la llamada real del 29/09/2026, Ramón repitió SIN que se lo preguntaran los mismos números de arriba (3.000€/300.000km/15 años). Pero minutos después, cuando Eliud leyó en voz alta una regla distinta para 'confirmarla' (más de 4.000€ y menos de 280.000km -- cifras de una investigación previa, no de esta especificación), Ramón también dijo 'sí'. No se resolvió cuál es la correcta -- probablemente confirmó de pasada sin comparar las dos cifras. Se mantienen 3.000€/300.000km/15 años porque están triple-confirmados (documento + dicho dos veces por Ramón sin que se lo pidieran) frente a un 'sí' aislado a una pregunta de verificación. PREGUNTAR A RAMÓN para resolver del todo antes de publicar en producción si hay dudas.",
+      "RESUELTO 09/10/2026: Eliud reconfirmó por escrito los mismos números (menos de 300.000km, máximo 15 años, mínimo 3.000€) en el encargo de conexión completa del agente de voz -- cuarta confirmación independiente, coincide con el documento y con lo que Ramón dijo dos veces sin que se le preguntara. La cifra alternativa (4.000€/280.000km) que surgió de una pregunta de verificación aislada el 29/09/2026 se descarta.",
     process: ["DNI", "Validación de DNI (por correo electrónico)", "Validación bancaria (genera informe al banco de si el cliente es apto)"],
     no_extra_docs_needed: "No requiere nómina, contrato de trabajo ni antigüedad laboral -- la validación bancaria ya cubre eso (confirmado 29/09/2026).",
     approval_note: "Ramón gestiona el proceso internamente; la aprobación final la da la entidad financiera. Nunca prometer aprobación, cuota, TIN o TAE sin herramienta autorizada.",
@@ -155,8 +155,8 @@ export const businessInfo = {
     "Tarifas de trámites (transferencia, cambio de titularidad, informe DGT, baja) -- NUNCA usar la cifra de 130€ mencionada antes hasta que el negocio confirme exactamente qué incluye",
     "Discrepancias de vehículos observadas entre coches.net y Wallapop (ver conflicts por unidad)",
     "Confirmación de si el proveedor de financiación sigue siendo Lendrock",
-    "Resolver la contradicción de umbrales de financiación (ver financing.unresolved_conflict)",
-    "Número de teléfono nuevo a comprar para conectar el agente de voz (Eliud gestiona esto, no Ramón) -- prioridad para mañana",
+    "Número de teléfono nuevo a comprar para conectar el agente de voz (Eliud gestiona esto, no Ramón) -- comparando proveedores, pendiente de autorización de compra",
     "Quién paga el número nuevo y el consumo de llamadas",
+    "Qué operadora usa Ramón en su teléfono actual y si admite desvío por no respuesta/fuera de horario (necesario para el desvío Ramón -> número virtual -> Miguel)",
   ],
 };

@@ -22,9 +22,21 @@ export function requestFinancing(args: { lead_phone?: string; vehicle_id?: strin
   if (vehicle) {
     const priceOk = criteria.min_price_inclusive ? vehicle.price_eur >= criteria.min_price_eur : vehicle.price_eur > criteria.min_price_eur;
     const kmOk = criteria.max_km_inclusive ? vehicle.km <= criteria.max_km : vehicle.km < criteria.max_km;
-    meets_orientative_criteria = priceOk && kmOk;
     if (!priceOk) notes.push(`Precio (${vehicle.price_eur}€) por debajo del mínimo orientativo (${criteria.min_price_eur}€).`);
     if (!kmOk) notes.push(`Kilometraje (${vehicle.km} km) igual o por encima del máximo orientativo (${criteria.max_km} km).`);
+
+    if (vehicle.year == null) {
+      // Sin año conocido no se puede comprobar el criterio de antigüedad -- "unknown"
+      // en vez de asumir que cumple, para no fabricar una elegibilidad que no se comprobó.
+      meets_orientative_criteria = "unknown";
+      notes.push("Año del vehículo no disponible -- no se puede comprobar el criterio de antigüedad máxima (15 años).");
+    } else {
+      const vehicleAgeYears = new Date().getFullYear() - vehicle.year;
+      const ageOk = criteria.max_age_inclusive ? vehicleAgeYears <= criteria.max_age_years : vehicleAgeYears < criteria.max_age_years;
+      if (!ageOk) notes.push(`Antigüedad (${vehicleAgeYears} años) por encima del máximo orientativo (${criteria.max_age_years} años).`);
+      if (vehicleAgeYears === criteria.max_age_years) notes.push("Caso límite exacto de antigüedad -- no decidir, dejar que el equipo lo confirme.");
+      meets_orientative_criteria = priceOk && kmOk && ageOk;
+    }
     if (vehicle.km === criteria.max_km || vehicle.price_eur === criteria.min_price_eur) {
       notes.push("Caso límite exacto -- no decidir, dejar que el equipo lo confirme.");
     }
