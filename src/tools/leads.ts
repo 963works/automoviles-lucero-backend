@@ -8,6 +8,7 @@ type Temperature = "COLD" | "WARM" | "HOT";
 type Lead = {
   id: string;
   phone: string | null;
+  email: string | null;
   name: string | null;
   intent: string | null;
   notes: string | null;
@@ -38,6 +39,7 @@ function readLeads() {
 
 export function upsertLead(args: {
   phone?: string;
+  email?: string;
   name?: string;
   intent?: string;
   notes?: string;
@@ -47,10 +49,19 @@ export function upsertLead(args: {
   purchase_timing?: string;
 }) {
   const leads = readLeads();
-  let lead = args.phone ? leads.find((l) => l.phone === args.phone) : undefined;
+  // Teléfono es la clave principal (lo usan voz/chat, que siempre lo tienen).
+  // Un lead que llega por email puede no dar teléfono -- en ese caso se
+  // identifica por email para no duplicarlo en cada correo nuevo del mismo remitente.
+  let lead = args.phone
+    ? leads.find((l) => l.phone === args.phone)
+    : args.email
+      ? leads.find((l) => l.email === args.email)
+      : undefined;
 
   if (lead) {
     lead.name = args.name ?? lead.name;
+    lead.email = args.email ?? lead.email;
+    lead.phone = args.phone ?? lead.phone;
     lead.intent = args.intent ?? lead.intent;
     lead.notes = args.notes ? `${lead.notes ? lead.notes + " | " : ""}${args.notes}` : lead.notes;
     lead.channel = args.channel ?? lead.channel;
@@ -65,6 +76,7 @@ export function upsertLead(args: {
     lead = {
       id: crypto.randomUUID(),
       phone: args.phone ?? null,
+      email: args.email ?? null,
       name: args.name ?? null,
       intent: args.intent ?? null,
       notes: args.notes ?? null,
