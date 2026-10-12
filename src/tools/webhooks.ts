@@ -22,6 +22,11 @@ export function handleRetellWebhook(payload: any) {
     call_id: call.call_id ?? call.chat_id ?? null,
     from_number: call.from_number ?? null,
     duration_ms: call.duration_ms ?? null,
+    disconnection_reason: call.disconnection_reason ?? null,
+    // combined_cost viene en céntimos de dólar reales (confirmado contra la
+    // API de Retell, 13/10/2026) -- se guarda tal cual, el panel lo divide
+    // entre 100 para mostrar euros/dólares.
+    cost_cents: call.call_cost?.combined_cost ?? null,
     call_successful: analysis.call_successful ?? null,
     summary: analysis.call_summary ?? null,
     // issues_detected (Sección "registro de incidencias", 01/10/2026): campo

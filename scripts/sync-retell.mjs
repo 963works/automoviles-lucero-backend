@@ -135,27 +135,15 @@ function tool(name, description, properties, required = []) {
 // Quedan fuera deliberadamente: confirm_reservation/cancel_reservation
 // (Sección 26: exigen validación humana, no son tool del agente),
 // sync_inventory (Sección 46: automatización, no una acción de conversación),
-// y send_vehicle_link (13/10/2026, decisión del negocio: Miguel nunca ofrece
-// ni envía enlaces -- no hay feed en vivo de coches.net que respalde un
-// enlace fiable).
+// send_vehicle_link (13/10/2026: Miguel nunca ofrece ni envía enlaces -- no
+// hay feed en vivo de coches.net que respalde un enlace fiable), y
+// search_vehicle/get_vehicle/get_vehicle_status/find_similar_vehicles
+// (13/10/2026, decisión DEFINITIVA del negocio: Miguel no consulta
+// inventario de ningún tipo -- ni coches.net, ni Wallapop, ni Dealcar).
 // transfer_call SÍ está activo (ver transferTools en syncVoice) -- solo en
 // voz, con Ramón y José ya confirmados.
 const AGENT_TOOLS = [
   tool("get_business_info", "Devuelve políticas confirmadas del negocio (horarios, financiación, garantía, reserva, ubicación, WhatsApp).", {}, []),
-  tool("search_vehicle", "Busca vehículos por texto libre, marca, modelo, tipo de carrocería, combustible o rango de precio/km.", {
-    query: S, make: S, model: S,
-    // Carrocería real del feed de Coches.net PRO: Monovolumen/Berlina/
-    // Industriales/4x4/Familiar. Se incluyen también sinónimos de lenguaje
-    // natural ("SUV", "furgoneta"...) porque el backend los traduce a la
-    // carrocería real (ver CATEGORY_SYNONYMS en vehicles.ts) -- así el
-    // agente puede usar la palabra que diga el cliente sin tener que
-    // conocer la taxonomía interna.
-    category: { type: "string", enum: ["Monovolumen", "Berlina", "Industriales", "4x4", "Familiar", "SUV", "Furgoneta", "Compacto", "Todoterreno"] },
-    fuel: S, max_price_eur: N, min_price_eur: N, max_km: N, page: N,
-  }),
-  tool("get_vehicle", "Devuelve la ficha completa de una unidad por su id interno.", { id: S }, ["id"]),
-  tool("get_vehicle_status", "Consulta el estado oficial interno de un vehículo (AVAILABLE/RESERVATION_PENDING/RESERVED/SOLD).", { id: S }, ["id"]),
-  tool("find_similar_vehicles", "Busca alternativas similares a un vehículo (mismo rango de precio/km, prioridad misma categoría). Máximo 3.", { vehicle_id: S }, ["vehicle_id"]),
   tool("create_lead", "Crea el registro del interesado si no existe (teléfono, nombre, intención, vehículo de interés, presupuesto, momento de compra).", {
     phone: S, name: S, intent: S, notes: S, channel: S, vehicle_interest: S, budget: S, purchase_timing: S,
   }),
@@ -221,6 +209,16 @@ async function syncVoice(state) {
       public_handoff_option: { type: "static_message", message: `Un momento, te paso con ${name}.` },
     };
   }
+  // CRÍTICO (13/10/2026, encargo de conexión telefónica, sección 5): si
+  // alguna vez el número de Ramón quedara desviado hacia el propio número
+  // de Twilio (o hacia el Yoigo habitual con un desvío total activo),
+  // transferir ahí crearía un bucle de llamada. Guardia real, no solo un
+  // comentario: esta lista son los números HOY prohibidos como destino de
+  // transferencia -- Yoigo (622177052, el que podría tener desvío activo)
+  // y el propio Twilio (919588887, el origen de la llamada). Si algún día
+  // se cambia un transfer_destination por error a uno de estos, el script
+  // revienta aquí mismo en vez de publicarlo.
+  const FORBIDDEN_TRANSFER_DESTINATIONS = ["+34622177052", "+34919588887"];
   const transferTools = [
     {
       type: "transfer_call",
@@ -237,6 +235,13 @@ async function syncVoice(state) {
       transfer_option: warmTransferOption("José"),
     },
   ];
+  for (const t of transferTools) {
+    if (FORBIDDEN_TRANSFER_DESTINATIONS.includes(t.transfer_destination.number)) {
+      throw new Error(
+        `Destino de transferencia prohibido (riesgo de bucle): ${t.name} -> ${t.transfer_destination.number}. No se publica nada hasta corregirlo.`,
+      );
+    }
+  }
 
   const generalTools = [
     { type: "end_call", name: "end_call", description: "Termina la llamada cuando la conversación ha concluido de forma natural.", speak_after_execution: true },

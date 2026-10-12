@@ -850,12 +850,25 @@ ${test ? `<p>Evento de prueba creado: <a href="${esc(test.link)}" target="_blank
 </div>`
     : "";
   const voiceOn = isVoiceAgentEnabled();
+  const recentCalls = readCollection<{
+    channel: string;
+    created_at: string;
+    duration_ms: number | null;
+    cost_cents: number | null;
+    custom_analysis_data?: { outcome?: string };
+  }>("call_analyses").filter((c) => c.channel === "VOICE");
+  const lastCall = recentCalls.length ? recentCalls[recentCalls.length - 1] : null;
+  const totalCostEur = recentCalls.reduce((sum, c) => sum + (c.cost_cents ?? 0), 0) / 100;
+  const escalatedCount = recentCalls.filter((c) => c.custom_analysis_data?.outcome === "escalado_a_persona").length;
   const voiceBox = `<div class="box"><h3 style="margin-top:0">Teléfono -- agente de voz Miguel</h3>
 <p>Número: +34 919 58 88 87. Estado: <strong>${voiceOn ? "Miguel está respondiendo" : "Desactivado -- suenan Ramón y José directamente"}</strong></p>
 <form method="post" action="/crm/integraciones/telefono/${voiceOn ? "desactivar" : "activar"}" style="display:inline">
 <button class="btn ${voiceOn ? "danger" : "ok"}" type="submit" onclick="return confirm('${voiceOn ? "¿Desactivar a Miguel? Las llamadas nuevas sonarán directamente en los móviles de Ramón y José." : "¿Activar a Miguel? Volverá a responder él las llamadas nuevas."}')">${voiceOn ? "Desactivar a Miguel" : "Activar a Miguel"}</button>
 </form>
 <p class="sub">Esto NO toca el desvío de Yoigo -- solo decide si las llamadas que ya llegan al número de Twilio las contesta Miguel o van directas a Ramón/José.</p>
+<p>Llamadas registradas: <strong>${recentCalls.length}</strong> -- Última: <strong>${lastCall ? esc(fmtDate(lastCall.created_at)) : "ninguna todavía"}</strong></p>
+<p>Escaladas a persona: <strong>${escalatedCount}</strong> -- Coste estimado acumulado: <strong>${totalCostEur.toFixed(2)} $</strong></p>
+<p class="sub">El coste es el real que reporta Retell por llamada, sumado desde que se activó este registro (13/10/2026) -- no incluye llamadas anteriores a esa fecha.</p>
 </div>`;
   const body = `<h1>Integraciones</h1>
 <p class="sub">Conexión con la cuenta de Google del negocio: correo y calendario de citas.</p>

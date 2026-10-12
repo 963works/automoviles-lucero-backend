@@ -1,6 +1,8 @@
 import { appendToCollection, readCollection, writeCollection } from "../store.js";
 import { envelope } from "../response.js";
 import { isGoogleConnected, calendarBusy, calendarCreateEvent } from "../integrations/google.js";
+import { isMadridHoliday } from "../data/holidays-madrid-2026.js";
+import { withAppointmentLock } from "./appointment-lock.js";
 
 function now() {
   return new Date().toISOString();
@@ -28,6 +30,13 @@ function isWeekend(requested_date?: string): boolean {
   return day === 0 || day === 6;
 }
 
+// Fin de semana O festivo (Comunidad/municipio de Madrid, fuente real en
+// holidays-madrid-2026.ts) -- ninguno de los dos admite cita automática.
+function isNonBookingDay(requested_date?: string): boolean {
+  if (!requested_date) return false;
+  return isWeekend(requested_date) || isMadridHoliday(requested_date);
+}
+
 function withinWeekdayWindow(minutes: number): boolean {
   return WEEKDAY_WINDOWS.some((w) => minutes >= w.start && minutes <= w.end);
 }
@@ -45,9 +54,9 @@ export function createAppointment(args: {
   notes?: string;
 }) {
   const minutes = parseTime(args.requested_time);
-  const weekend = isWeekend(args.requested_date);
+  const nonBookingDay = isNonBookingDay(args.requested_date);
 
-  if (weekend) {
+  if (nonBookingDay) {
     const appointment = {
       id: crypto.randomUUID(),
       ...args,
@@ -59,7 +68,7 @@ export function createAppointment(args: {
       status: "ok",
       data: appointment,
       source: "registro interno (sin agenda real conectada)",
-      conflicts: ["Fin de semana: el negocio solo atiende con cita previa Y confirmación expresa -- dejar muy claro que queda solicitada, no confirmada."],
+      conflicts: ["Fin de semana o festivo: el negocio solo atiende citas presenciales con confirmación expresa -- dejar muy claro que queda solicitada, no confirmada."],
     });
   }
 
@@ -94,7 +103,7 @@ export function updateAppointment(args: { appointment_id: string; requested_date
 
   if (args.requested_time) {
     const minutes = parseTime(args.requested_time);
-    if (minutes !== null && !isWeekend(args.requested_date ?? appt.requested_date) && !withinWeekdayWindow(minutes)) {
+    if (minutes !== null && !isNonBookingDay(args.requested_date ?? appt.requested_date) && !withinWeekdayWindow(minutes)) {
       return envelope({ status: "denied", error_code: "outside_business_hours", data: { hours: "L-V 09:30-14:00 y 16:30-19:00" } });
     }
   }
@@ -158,7 +167,7 @@ export async function getAppointmentSlots() {
     const day = new Date(today);
     day.setUTCDate(day.getUTCDate() + dayOffset);
     const dateStr = day.toISOString().slice(0, 10);
-    if (isWeekend(dateStr)) continue;
+    if (isNonBookingDay(dateStr)) continue;
 
     const dayStartMs = madridLocalToUtcMs(dateStr, WEEKDAY_WINDOWS[0].start);
     const dayEndMs = madridLocalToUtcMs(dateStr, WEEKDAY_WINDOWS[WEEKDAY_WINDOWS.length - 1].end);
@@ -191,41 +200,71 @@ export async function getAppointmentSlots() {
 // Con Google Calendar conectado: se comprueba que el hueco esté libre antes
 // de registrar la cita, y si lo está se crea el evento en la agenda real del
 // negocio. La cita sigue en estado "requested" -- no se confirma sola.
+//
+// Reserva atómica real (Sección 5, encargo de festivos/reservas 13/10/2026):
+// todo el bloque comprobar-hueco + crear-cita + crear-evento corre dentro de
+// withAppointmentLock, así que dos llamadas concurrentes (dos clientes
+// pidiendo el mismo hueco a la vez, o una misma llamada reintentada por n8n)
+// nunca pueden colarse entre la comprobación y la creación del otro -- la
+// revalidación "inmediatamente antes de crear" es, de hecho, la propia
+// comprobación, porque nada más puede ejecutarse mientras el lock está
+// tomado. Idempotencia: si ya existe una cita no cancelada para el mismo
+// teléfono+fecha+hora, se devuelve esa en vez de crear un duplicado.
 export async function createAppointmentWithCalendar(args: Parameters<typeof createAppointment>[0]) {
-  const minutes = parseTime(args.requested_time);
-  const dateOk = Boolean(args.requested_date && /^\d{4}-\d{2}-\d{2}$/.test(args.requested_date));
-  if (!isGoogleConnected() || minutes === null || !dateOk || isWeekend(args.requested_date)) {
-    return createAppointment(args);
-  }
-  const startMs = madridLocalToUtcMs(args.requested_date!, minutes);
-  const endMs = startMs + APPOINTMENT_MINUTES * 60000;
-  const busy = await calendarBusy(new Date(startMs).toISOString(), new Date(endMs).toISOString());
-  if (busy.some((b) => Date.parse(b.start) < endMs && Date.parse(b.end) > startMs)) {
-    return envelope({
-      status: "denied",
-      error_code: "slot_busy",
-      data: null,
-      source: "agenda del negocio (Google Calendar)",
-      conflicts: ["Ese hueco ya está ocupado -- ofrecer otro horario."],
+  return withAppointmentLock(async () => {
+    const existing = readCollection<{ id: string; lead_phone?: string; requested_date?: string; requested_time?: string; status: string }>(
+      "appointments",
+    ).find(
+      (a) =>
+        a.status !== "cancelled" &&
+        a.lead_phone === args.lead_phone &&
+        a.requested_date === args.requested_date &&
+        a.requested_time === args.requested_time,
+    );
+    if (existing) {
+      return envelope({
+        status: "ok",
+        data: existing,
+        source: "registro interno (ya existía -- reintento detectado)",
+        conflicts: [],
+      });
+    }
+
+    const minutes = parseTime(args.requested_time);
+    const dateOk = Boolean(args.requested_date && /^\d{4}-\d{2}-\d{2}$/.test(args.requested_date));
+    if (!isGoogleConnected() || minutes === null || !dateOk || isNonBookingDay(args.requested_date)) {
+      return createAppointment(args);
+    }
+    const startMs = madridLocalToUtcMs(args.requested_date!, minutes);
+    const endMs = startMs + APPOINTMENT_MINUTES * 60000;
+    const busy = await calendarBusy(new Date(startMs).toISOString(), new Date(endMs).toISOString());
+    if (busy.some((b) => Date.parse(b.start) < endMs && Date.parse(b.end) > startMs)) {
+      return envelope({
+        status: "denied",
+        error_code: "slot_busy",
+        data: null,
+        source: "agenda del negocio (Google Calendar)",
+        conflicts: ["Ese hueco ya está ocupado -- ofrecer otro horario."],
+      });
+    }
+    const result = createAppointment(args);
+    const registered = result as unknown as { status: string; data: { id: string } | null };
+    if (registered.status !== "ok" || !registered.data) return result;
+
+    const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
+    const mm = String(minutes % 60).padStart(2, "0");
+    const endMinutes = minutes + APPOINTMENT_MINUTES;
+    const eh = String(Math.floor(endMinutes / 60)).padStart(2, "0");
+    const em = String(endMinutes % 60).padStart(2, "0");
+    const event = await calendarCreateEvent({
+      summary: `Cita Lucero (${args.appointment_type ?? "visita"}) -- pendiente de confirmar`,
+      description: `Solicitada por Miguel. Teléfono: ${args.lead_phone ?? "sin teléfono"}. Vehículo: ${args.vehicle_id ?? "sin vehículo"}. ${args.notes ?? ""}`.trim(),
+      startLocal: `${args.requested_date}T${hh}:${mm}:00`,
+      endLocal: `${args.requested_date}T${eh}:${em}:00`,
     });
-  }
-  const result = createAppointment(args);
-  const registered = result as unknown as { status: string; data: { id: string } | null };
-  if (registered.status !== "ok" || !registered.data) return result;
 
-  const hh = String(Math.floor(minutes / 60)).padStart(2, "0");
-  const mm = String(minutes % 60).padStart(2, "0");
-  const endMinutes = minutes + APPOINTMENT_MINUTES;
-  const eh = String(Math.floor(endMinutes / 60)).padStart(2, "0");
-  const em = String(endMinutes % 60).padStart(2, "0");
-  const event = await calendarCreateEvent({
-    summary: `Cita Lucero (${args.appointment_type ?? "visita"}) -- pendiente de confirmar`,
-    description: `Solicitada por Miguel. Teléfono: ${args.lead_phone ?? "sin teléfono"}. Vehículo: ${args.vehicle_id ?? "sin vehículo"}. ${args.notes ?? ""}`.trim(),
-    startLocal: `${args.requested_date}T${hh}:${mm}:00`,
-    endLocal: `${args.requested_date}T${eh}:${em}:00`,
+    const all = readCollection<{ id: string; google_event_id?: string }>("appointments");
+    writeCollection("appointments", all.map((a) => (a.id === registered.data!.id ? { ...a, google_event_id: event.id } : a)));
+    return result;
   });
-
-  const all = readCollection<{ id: string; google_event_id?: string }>("appointments");
-  writeCollection("appointments", all.map((a) => (a.id === registered.data!.id ? { ...a, google_event_id: event.id } : a)));
-  return result;
 }
