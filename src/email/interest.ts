@@ -33,5 +33,15 @@ export function decideInterest(input: { subject: string; text: string; hasPriorT
   if (INTERESTED.some((r) => r.test(body))) {
     return { interested: true, reason: "pregunta_sobre_vehiculos_o_servicios" };
   }
-  return { interested: true, reason: "persona_sin_tema_claro" };
+  // 13/10/2026, decisión del negocio: el agente de correo solo responde
+  // automáticamente consultas de ventas/vehículos, reservas, citas/visitas
+  // o información del negocio -- nada más se marca como interesado por
+  // defecto. Esto SÍ coincide por fin con lo que ya decía el comentario de
+  // cabecera de este archivo ("lo que no encaja... pasa a revisión
+  // humana") -- antes el código hacía justo lo contrario. Un correo sin
+  // tema claro (candidatos a trabajo, prensa, proveedores, spam real que
+  // no cayó en AUTOMATED_ONLY) queda registrado en email_inbox/CRM
+  // (/crm/pendientes) para que el equipo lo vea y conteste si hace falta
+  // -- nunca se contesta solo ni se pierde.
+  return { interested: false, reason: "sin_tema_claro_revision_humana" };
 }
