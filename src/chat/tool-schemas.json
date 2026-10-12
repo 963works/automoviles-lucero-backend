@@ -511,28 +511,6 @@
   {
     "type": "function",
     "function": {
-      "name": "send_vehicle_link",
-      "description": "Registra el envío del enlace individual de un vehículo (coches.net) a un canal del cliente. Nunca inventes la URL.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "lead_phone": {
-            "type": "string"
-          },
-          "vehicle_id": {
-            "type": "string"
-          },
-          "channel": {
-            "type": "string"
-          }
-        },
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "send_location",
       "description": "Devuelve la dirección y referencias de metro confirmadas del concesionario.",
       "parameters": {
