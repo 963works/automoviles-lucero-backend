@@ -13,8 +13,12 @@ import { verifyRetellSignature } from "./integrations/retell-signature.js";
 import { forwardVoiceAnalysis } from "./integrations/n8n.js";
 import { renderPanel } from "./panel.js";
 import { startScheduler } from "./scheduler.js";
-import { appendToCollection, readCollection } from "./store.js";
+import { appendToCollection, readCollection, writeCollection } from "./store.js";
 import { createAuthUrl, consumeState, exchangeCodeAndStore, googleStatus, describeGoogleError } from "./integrations/google.js";
+import { sendWhatsappText, isWhatsappConnected } from "./integrations/whatsapp.js";
+import twilioPkg from "twilio";
+import { verifyTwilioSignature } from "./integrations/twilio-signature.js";
+import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "./tools/agent-toggle.js";
 import { handleChatMessage, LlmNotConfigured } from "./chat/agent.js";
 import { processInboundEmail } from "./email/agent.js";
 import { startEmailPoller } from "./email/poller.js";
@@ -210,6 +214,81 @@ app.post("/chat/message", requireAdminToken, async (req, res) => {
     console.error("[chat] error:", err);
     res.status(502).json({ error: "llm_error" });
   }
+});
+
+// WhatsApp real (Fase 1, 13/10/2026): lo llama n8n tras verificar la firma
+// de Meta y normalizar el payload (workflow "Lucero - WhatsApp v2"). Mismo
+// patrón que /email/inbound -- n8n es solo transporte, toda la lógica
+// comercial vive aquí, compartida de verdad con email y chat vía
+// handleChatMessage(). Dedupe propio por mensaje (igual que email_processed)
+// porque un mensaje de WhatsApp puede reintentarse desde Meta/n8n.
+const MAX_WHATSAPP_PROCESSED_KEPT = 500;
+app.post("/channels/whatsapp/inbound", requireAdminToken, async (req, res) => {
+  const b = req.body ?? {};
+  if (typeof b.from !== "string" || typeof b.text !== "string" || !b.from.trim() || !b.text.trim()) {
+    res.status(400).json({ error: "bad_request" });
+    return;
+  }
+  const from = b.from.trim();
+  const text = b.text.trim().slice(0, 2000);
+  const messageId = typeof b.message_id === "string" && b.message_id ? b.message_id : crypto.randomUUID();
+  const dedupeKey = `${from}|${messageId}`;
+
+  const processed = readCollection<{ key: string; at: string }>("whatsapp_processed");
+  if (processed.some((p) => p.key === dedupeKey)) {
+    res.json({ ok: true, deduped: true });
+    return;
+  }
+
+  try {
+    const result = await handleChatMessage(from, text, "WHATSAPP", from);
+    writeCollection(
+      "whatsapp_processed",
+      [...processed, { key: dedupeKey, at: new Date().toISOString() }].slice(-MAX_WHATSAPP_PROCESSED_KEPT),
+    );
+    if (isWhatsappConnected()) {
+      const sent = await sendWhatsappText(from, result.reply);
+      if (!sent.ok) {
+        console.error("[whatsapp] no se pudo enviar la respuesta:", sent.error);
+        res.status(502).json({ error: "whatsapp_send_failed", detail: sent.error, reply: result.reply });
+        return;
+      }
+    } else {
+      console.warn("[whatsapp] credenciales no conectadas -- respuesta generada pero NO enviada:", result.reply);
+    }
+    res.json({ ok: true, reply: result.reply, tool_runs: result.tool_runs });
+  } catch (err) {
+    if (err instanceof LlmNotConfigured) {
+      res.status(503).json({ error: "llm_not_configured" });
+      return;
+    }
+    console.error("[whatsapp] inbound:", err);
+    res.status(502).json({ error: "whatsapp_processing_error" });
+  }
+});
+
+// Teléfono real (Fase 1-2 de la conexión telefónica, 13/10/2026): Twilio
+// llama aquí en cada llamada entrante al número español, firmado con
+// X-Twilio-Signature (verificado con la librería oficial, nunca a mano).
+// El número NO está asociado a un Trunk de Twilio a propósito -- así esta
+// ruta decide de verdad en cada llamada, en vez de un enrutamiento fijo.
+app.post("/telephony/voice-inbound", express.urlencoded({ extended: false }), (req, res) => {
+  if (!verifyTwilioSignature(req.header("X-Twilio-Signature"), req.body, process.env.TWILIO_AUTH_TOKEN)) {
+    res.status(403).send("forbidden");
+    return;
+  }
+  const response = new twilioPkg.twiml.VoiceResponse();
+  if (isVoiceAgentEnabled()) {
+    response.dial().sip("sip:sip.retellai.com");
+  } else {
+    // Ruta alternativa cuando Miguel está desactivado: suenan los móviles
+    // reales de Ramón y José a la vez (el primero que conteste se queda con
+    // la llamada) -- nunca Yoigo, eso se gestiona por fuera de este sistema.
+    const dial = response.dial({ timeout: 25 });
+    dial.number("+34622188213");
+    dial.number("+34624807067");
+  }
+  res.type("text/xml").send(response.toString());
 });
 
 // Conexión de la cuenta de Google del negocio (Gmail + Calendar). El dueño

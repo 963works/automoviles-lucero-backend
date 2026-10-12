@@ -8,6 +8,7 @@ import { createReservationPending, confirmReservation, cancelReservation } from 
 import { getOfficialStatus, setOfficialStatus, type OfficialVehicleStatus } from "../tools/vehicle-state.js";
 import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone } from "../alerts/alerts.js";
+import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "../tools/agent-toggle.js";
 import {
   googleStatus,
   googleConfigMissing,
@@ -848,6 +849,14 @@ ${test ? `<p>Evento de prueba creado: <a href="${esc(test.link)}" target="_blank
 <form method="post" action="/crm/integraciones/google/borrar-prueba" style="display:inline"><button class="btn danger" type="submit">Borrar evento de prueba</button></form>` : ""}
 </div>`
     : "";
+  const voiceOn = isVoiceAgentEnabled();
+  const voiceBox = `<div class="box"><h3 style="margin-top:0">Teléfono -- agente de voz Miguel</h3>
+<p>Número: +34 919 58 88 87. Estado: <strong>${voiceOn ? "Miguel está respondiendo" : "Desactivado -- suenan Ramón y José directamente"}</strong></p>
+<form method="post" action="/crm/integraciones/telefono/${voiceOn ? "desactivar" : "activar"}" style="display:inline">
+<button class="btn ${voiceOn ? "danger" : "ok"}" type="submit" onclick="return confirm('${voiceOn ? "¿Desactivar a Miguel? Las llamadas nuevas sonarán directamente en los móviles de Ramón y José." : "¿Activar a Miguel? Volverá a responder él las llamadas nuevas."}')">${voiceOn ? "Desactivar a Miguel" : "Activar a Miguel"}</button>
+</form>
+<p class="sub">Esto NO toca el desvío de Yoigo -- solo decide si las llamadas que ya llegan al número de Twilio las contesta Miguel o van directas a Ramón/José.</p>
+</div>`;
   const body = `<h1>Integraciones</h1>
 <p class="sub">Conexión con la cuenta de Google del negocio: correo y calendario de citas.</p>
 ${config}
@@ -858,7 +867,8 @@ ${st.connected_at ? `<p>Conectada desde: ${esc(fmtDate(st.connected_at))}</p>` :
 <p>Permisos concedidos:</p>${scopesHtml}
 <p>${connectButton} ${disconnectButton}</p>
 </div>
-${tests}`;
+${tests}
+${voiceBox}`;
   res.type("html").send(page("Integraciones", me(res), body, msgOf(req)));
 });
 
@@ -870,6 +880,18 @@ crm.get("/integraciones/google/conectar", (_req, res) => {
   } catch (err) {
     back(res, "/crm/integraciones", describeGoogleError(err));
   }
+});
+
+crm.post("/integraciones/telefono/activar", (_req, res) => {
+  if (!onlyAdmin(res)) return back(res, "/crm", "Solo el administrador");
+  setVoiceAgentEnabled(true, me(res).email);
+  back(res, "/crm/integraciones", "Miguel activado -- vuelve a contestar las llamadas nuevas.");
+});
+
+crm.post("/integraciones/telefono/desactivar", (_req, res) => {
+  if (!onlyAdmin(res)) return back(res, "/crm", "Solo el administrador");
+  setVoiceAgentEnabled(false, me(res).email);
+  back(res, "/crm/integraciones", "Miguel desactivado -- las llamadas nuevas sonarán en los móviles de Ramón y José.");
 });
 
 crm.post("/integraciones/google/desconectar", async (_req, res) => {

@@ -133,8 +133,11 @@ function tool(name, description, properties, required = []) {
 // defensivas ya probadas en producción: get_business_info/get_appointment_slots
 // evitan que el agente invente datos cuando no hay fuente conectada).
 // Quedan fuera deliberadamente: confirm_reservation/cancel_reservation
-// (Sección 26: exigen validación humana, no son tool del agente) y
-// sync_inventory (Sección 46: automatización, no una acción de conversación).
+// (Sección 26: exigen validación humana, no son tool del agente),
+// sync_inventory (Sección 46: automatización, no una acción de conversación),
+// y send_vehicle_link (13/10/2026, decisión del negocio: Miguel nunca ofrece
+// ni envía enlaces -- no hay feed en vivo de coches.net que respalde un
+// enlace fiable).
 // transfer_call SÍ está activo (ver transferTools en syncVoice) -- solo en
 // voz, con Ramón y José ya confirmados.
 const AGENT_TOOLS = [
@@ -188,7 +191,6 @@ const AGENT_TOOLS = [
   tool("create_handoff", "Registra una solicitud de atención humana o devolución de llamada. Úsalo para escalar cualquier caso de la Sección 40.", {
     lead_phone: S, reason: S, urgency: { type: "string", enum: ["normal", "alta"] }, notes: S,
   }),
-  tool("send_vehicle_link", "Registra el envío del enlace individual de un vehículo (coches.net) a un canal del cliente. Nunca inventes la URL.", { lead_phone: S, vehicle_id: S, channel: S }),
   tool("send_location", "Devuelve la dirección y referencias de metro confirmadas del concesionario.", {}, []),
   tool("send_whatsapp", "Registra el envío de un mensaje de WhatsApp al cliente (queda en cola, sin integración de envío real todavía).", { lead_phone: S, message: S }),
   tool("notify_salesperson", "Notifica al vendedor (Ramón/José) de un lead caliente o incidencia urgente. Queda en cola hasta conectar el destino real.", {

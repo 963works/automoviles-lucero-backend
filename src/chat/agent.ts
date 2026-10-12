@@ -79,7 +79,13 @@ function saveConversation(record: ConversationRecord) {
   writeCollection("chat_conversations", [...others, record]);
 }
 
-export type Channel = "CHAT" | "EMAIL";
+export type Channel = "CHAT" | "EMAIL" | "WHATSAPP";
+
+const CHANNEL_LABEL: Record<Channel, string> = {
+  CHAT: "chat",
+  EMAIL: "correo electrónico",
+  WHATSAPP: "WhatsApp",
+};
 
 export async function handleChatMessage(
   sessionId: string,
@@ -96,7 +102,7 @@ export async function handleChatMessage(
   await dispatchTool("create_lead", { phone: contact, channel });
   const history = trimToTurns(conversation.messages);
   const turn: ChatMessage[] = [{ role: "user", content: userText }];
-  const context = `\n\nCONTEXTO DE ESTA CONVERSACIÓN\nCanal: ${channel === "EMAIL" ? "correo electrónico" : "chat"}. Identificador de contacto (úsalo como phone en las herramientas): ${contact}.`;
+  const context = `\n\nCONTEXTO DE ESTA CONVERSACIÓN\nCanal: ${CHANNEL_LABEL[channel]}. Identificador de contacto (úsalo como phone en las herramientas): ${contact}.`;
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt() + context }, ...history, ...turn];
 
   let toolRuns = 0;
@@ -121,7 +127,7 @@ export async function handleChatMessage(
           id: crypto.randomUUID(),
           timestamp: new Date().toISOString(),
           tool: call.function.name,
-          channel: channel === "EMAIL" ? "email" : "chat",
+          channel: channel.toLowerCase(),
           session_id: sessionId,
           input: args,
           result,
