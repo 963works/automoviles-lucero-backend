@@ -16,6 +16,9 @@ import { startScheduler } from "./scheduler.js";
 import { appendToCollection, readCollection, writeCollection } from "./store.js";
 import { createAuthUrl, consumeState, exchangeCodeAndStore, googleStatus, describeGoogleError } from "./integrations/google.js";
 import { sendWhatsappText, isWhatsappConnected } from "./integrations/whatsapp.js";
+import twilioPkg from "twilio";
+import { verifyTwilioSignature } from "./integrations/twilio-signature.js";
+import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "./tools/agent-toggle.js";
 import { handleChatMessage, LlmNotConfigured } from "./chat/agent.js";
 import { processInboundEmail } from "./email/agent.js";
 import { startEmailPoller } from "./email/poller.js";
@@ -262,6 +265,30 @@ app.post("/channels/whatsapp/inbound", requireAdminToken, async (req, res) => {
     console.error("[whatsapp] inbound:", err);
     res.status(502).json({ error: "whatsapp_processing_error" });
   }
+});
+
+// Teléfono real (Fase 1-2 de la conexión telefónica, 13/10/2026): Twilio
+// llama aquí en cada llamada entrante al número español, firmado con
+// X-Twilio-Signature (verificado con la librería oficial, nunca a mano).
+// El número NO está asociado a un Trunk de Twilio a propósito -- así esta
+// ruta decide de verdad en cada llamada, en vez de un enrutamiento fijo.
+app.post("/telephony/voice-inbound", express.urlencoded({ extended: false }), (req, res) => {
+  if (!verifyTwilioSignature(req.header("X-Twilio-Signature"), req.body, process.env.TWILIO_AUTH_TOKEN)) {
+    res.status(403).send("forbidden");
+    return;
+  }
+  const response = new twilioPkg.twiml.VoiceResponse();
+  if (isVoiceAgentEnabled()) {
+    response.dial().sip("sip:sip.retellai.com");
+  } else {
+    // Ruta alternativa cuando Miguel está desactivado: suenan los móviles
+    // reales de Ramón y José a la vez (el primero que conteste se queda con
+    // la llamada) -- nunca Yoigo, eso se gestiona por fuera de este sistema.
+    const dial = response.dial({ timeout: 25 });
+    dial.number("+34622188213");
+    dial.number("+34624807067");
+  }
+  res.type("text/xml").send(response.toString());
 });
 
 // Conexión de la cuenta de Google del negocio (Gmail + Calendar). El dueño
