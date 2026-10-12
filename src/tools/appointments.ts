@@ -129,6 +129,29 @@ export function cancelAppointment(args: { appointment_id: string; reason?: strin
   return envelope({ status: "ok", data: appt, source: "registro interno" });
 }
 
+// Hora/fecha real de Madrid ahora mismo, para que el agente sepa de verdad
+// si está en horario comercial (necesario para decidir si intentar
+// transferir o no -- Sección 5 del encargo de conexión telefónica,
+// 13/10/2026: "comprobar horario laboral" antes de transferir). Nunca se le
+// pide a la IA que adivine la hora -- se calcula aquí con datos reales.
+export function isWithinBusinessHoursNow(): boolean {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Madrid",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const dateStr = `${get("year")}-${get("month")}-${get("day")}`;
+  const minutes = Number(get("hour")) * 60 + Number(get("minute"));
+  if (isNonBookingDay(dateStr)) return false;
+  return withinWeekdayWindow(minutes);
+}
+
 // Madrid, UTC+1/UTC+2 según la época del año. El offset se calcula con Intl
 // para que el cambio de horario no desplace las citas una hora.
 function madridOffsetMinutes(at: Date): number {
