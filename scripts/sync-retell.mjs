@@ -176,8 +176,9 @@ const AGENT_TOOLS = [
     lead_phone: S, make: S, model: S, year: N, km: N, condition: S, known_issues: S, expected_price_eur: N, trade_in_vehicle_id: S,
   }),
   tool("create_service_request", "Registra una solicitud de trámite (transferencia, cambio de titularidad, baja, informe DGT) sin dar precios no confirmados.", { lead_phone: S, procedure_type: S, notes: S }),
-  tool("create_handoff", "Registra una solicitud de atención humana o devolución de llamada. Úsalo para escalar cualquier caso de la Sección 40.", {
+  tool("create_handoff", "Registra una solicitud de atención humana o devolución de llamada. Úsalo para escalar cualquier caso de la Sección 40. Pon reason_type:\"reserva\" SIEMPRE que sea la reserva de 500€, para que quede notificado de forma distinta y visible en el CRM -- no lo dejes como \"otro\".", {
     lead_phone: S, reason: S, urgency: { type: "string", enum: ["normal", "alta"] }, notes: S,
+    reason_type: { type: "string", enum: ["reserva", "compra_inmediata", "otro"] },
   }),
   tool("send_location", "Devuelve la dirección y referencias de metro confirmadas del concesionario.", {}, []),
   tool("send_whatsapp", "Registra el envío de un mensaje de WhatsApp al cliente (queda en cola, sin integración de envío real todavía).", { lead_phone: S, message: S }),

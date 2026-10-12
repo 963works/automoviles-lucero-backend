@@ -54,7 +54,17 @@ export function createServiceRequest(args: { lead_phone?: string; procedure_type
 // (Sección 14). No hay transferencia en vivo conectada todavía (números y
 // responsables pendientes de confirmar, Sección 23) -- por eso esto solo
 // registra la petición en vez de intentar transferir la llamada.
-export function createHandoff(args: { lead_phone?: string; reason?: string; urgency?: "normal" | "alta"; notes?: string }) {
+export function createHandoff(args: {
+  lead_phone?: string;
+  reason?: string;
+  urgency?: "normal" | "alta";
+  notes?: string;
+  // 13/10/2026: para que una reserva quede notificada de forma visible y
+  // distinta de cualquier otro aviso urgente (no mezclada en un "Urgente"
+  // genérico) -- ver Sección "el agente debería dejar notificada la
+  // reserva para que se pueda ver".
+  reason_type?: "reserva" | "compra_inmediata" | "otro";
+}) {
   const handoff = {
     id: crypto.randomUUID(),
     ...args,
@@ -66,7 +76,7 @@ export function createHandoff(args: { lead_phone?: string; reason?: string; urge
   if (args.urgency === "alta") {
     const lead = readCollection<{ phone: string | null; name: string | null }>("leads").find((l) => l.phone === args.lead_phone);
     raiseAlert({
-      kind: "handoff_urgente",
+      kind: args.reason_type === "reserva" ? "reserva_pendiente" : "handoff_urgente",
       lead_phone: args.lead_phone ?? null,
       name: lead?.name ?? null,
       reason: args.reason ?? "Atención urgente",

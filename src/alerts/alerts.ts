@@ -6,7 +6,7 @@ import { isGoogleConnected, sendGmail } from "../integrations/google.js";
 // Avisos urgentes para Ramón y José. Cada aviso queda en el CRM (bloque de Hoy)
 // hasta que alguien lo marca como atendido, y además sale por correo desde la
 // cuenta del negocio si Google está conectado.
-export type AlertKind = "lead_caliente" | "handoff_urgente";
+export type AlertKind = "lead_caliente" | "handoff_urgente" | "reserva_pendiente";
 export type Alert = {
   id: string;
   kind: AlertKind;
@@ -44,7 +44,12 @@ async function sendAlertEmail(alert: Alert) {
   const to = recipients();
   if (to.length === 0) return setEmailStatus(alert.id, "sin_destinatarios");
   if (!isGoogleConnected()) return setEmailStatus(alert.id, "sin_correo_conectado");
-  const title = alert.kind === "lead_caliente" ? "Cliente caliente: quiere comprar ya" : "Atención urgente o reserva de 500 €";
+  const title =
+    alert.kind === "lead_caliente"
+      ? "Cliente caliente: quiere comprar ya"
+      : alert.kind === "reserva_pendiente"
+        ? "RESERVA de 500 € -- gestionar cobro"
+        : "Atención urgente";
   const body = [
     title,
     "",

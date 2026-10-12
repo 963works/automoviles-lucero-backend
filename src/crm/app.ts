@@ -58,7 +58,7 @@ type Appointment = {
   status: string;
   created_at: string;
 };
-type Handoff = { id: string; lead_phone: string | null; reason?: string; urgency?: string; notes?: string; status: string; created_at: string };
+type Handoff = { id: string; lead_phone: string | null; reason?: string; urgency?: string; notes?: string; reason_type?: string; status: string; created_at: string };
 type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; thread_id?: string; in_reply_to?: string; answered?: boolean; created_at: string };
 type VehicleOverride = { vehicle_id: string; price_eur: number };
 
@@ -441,7 +441,7 @@ crm.get("/", (req, res) => {
         .map(
           (a) => `<div class="card"><div class="info">
 <h3>${esc(a.name || a.lead_phone || "Cliente sin nombre")}</h3>
-<p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : "Urgente"}</span> ${esc(a.reason)}</p>
+<p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : a.kind === "reserva_pendiente" ? "R" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : a.kind === "reserva_pendiente" ? "RESERVA 500€" : "Urgente"}</span> ${esc(a.reason)}</p>
 <p>Aviso por correo: ${esc(emailLabels[a.email_status] ?? a.email_status)}</p>
 ${phoneLink(a.lead_phone)}
 <form method="post" action="/crm/alertas/${esc(a.id)}" style="display:inline"><button class="btn ok" type="submit">Ya le he llamado</button></form>
@@ -595,9 +595,9 @@ crm.get("/pendientes", (req, res) => {
   const body = `<h1>Pendientes</h1>
 <p class="sub">Aquí aparece lo que Miguel no puede resolver solo. Cuando lo hayas atendido, pulsa el botón.</p>
 <h2>Avisos de Miguel (${handoffs.length})</h2>
-${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => `<div class="card ${h.urgency === "alta" ? "urgent" : "pending"}"><div class="info">
+${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => `<div class="card ${h.reason_type === "reserva" ? "urgent" : h.urgency === "alta" ? "urgent" : "pending"}"><div class="info">
 <h3>${esc(h.reason ?? "Aviso")}</h3>
-<p><span class="tag ${h.urgency === "alta" ? "t-hot" : ""}">${h.urgency === "alta" ? "Urgente" : "Normal"}</span></p>
+<p><span class="tag ${h.reason_type === "reserva" || h.reason_type === "compra_inmediata" || h.urgency === "alta" ? "t-hot" : ""}">${h.reason_type === "reserva" ? "RESERVA 500€" : h.reason_type === "compra_inmediata" ? "Compra inmediata" : h.urgency === "alta" ? "Urgente" : "Normal"}</span></p>
 <p>Cliente: <b>${esc(h.lead_phone ?? "sin contacto")}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
 <form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}</form>
 </div></div>`).join("")}

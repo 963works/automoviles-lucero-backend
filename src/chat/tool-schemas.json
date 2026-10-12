@@ -378,7 +378,7 @@
     "type": "function",
     "function": {
       "name": "create_handoff",
-      "description": "Registra una solicitud de atención humana o devolución de llamada. Úsalo para escalar cualquier caso de la Sección 40.",
+      "description": "Registra una solicitud de atención humana o devolución de llamada. Úsalo para escalar cualquier caso de la Sección 40. Pon reason_type:\"reserva\" SIEMPRE que sea la reserva de 500€, para que quede notificado de forma distinta y visible en el CRM -- no lo dejes como \"otro\".",
       "parameters": {
         "type": "object",
         "properties": {
@@ -397,6 +397,14 @@
           },
           "notes": {
             "type": "string"
+          },
+          "reason_type": {
+            "type": "string",
+            "enum": [
+              "reserva",
+              "compra_inmediata",
+              "otro"
+            ]
           }
         },
         "required": []
