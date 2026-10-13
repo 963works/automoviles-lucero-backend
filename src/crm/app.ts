@@ -272,20 +272,11 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
   ["click", "keydown", "touchstart"].forEach(function (evt) {
     document.addEventListener(evt, function () { if (ctx && ctx.state === "suspended") ctx.resume(); }, { passive: true });
   });
-  window.lucerosonar = function () {
-    if (ctx && ctx.state === "suspended") ctx.resume();
-    ding();
-  };
+  window.lucerosonar = ding;
   function seen() { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } }
   function saveSeen(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
-  function ding() {
-    // Estilo "Tri-tone" de iPhone (13/10/2026, a petición): tres notas
-    // cortas, brillantes y ascendentes en rápida sucesión -- no es el
-    // archivo exacto de Apple (no se puede ni se debe copiar), pero sí el
-    // mismo estilo general.
-    if (!ctx) return; // todavía sin desbloquear por una interacción -- no se puede sonar, pero sí recargamos
+  function playTones() {
     try {
-      if (ctx.state === "suspended") ctx.resume();
       [1046.5, 1318.5, 1568].forEach(function (freq, i) {
         var delay = i * 0.11;
         var o = ctx.createOscillator(), g = ctx.createGain();
@@ -297,6 +288,24 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
         o.start(ctx.currentTime + delay); o.stop(ctx.currentTime + delay + 0.22);
       });
     } catch (e) {}
+  }
+  function ding() {
+    // Estilo "Tri-tone" de iPhone (13/10/2026, a petición): tres notas
+    // cortas, brillantes y ascendentes en rápida sucesión -- no es el
+    // archivo exacto de Apple (no se puede ni se debe copiar), pero sí el
+    // mismo estilo general.
+    //
+    // Arreglo real (13/10/2026): sonar justo después de resume() sin
+    // esperar a que la promesa termine podía perderse en algunos
+    // navegadores (el contexto seguía "despertando" cuando se programaban
+    // los tonos). Ahora se espera de verdad a que resume() resuelva antes
+    // de sonar.
+    if (!ctx) return; // sin soporte de audio en este navegador
+    if (ctx.state === "suspended") {
+      ctx.resume().then(playTones).catch(function () {});
+    } else {
+      playTones();
+    }
   }
   function showBanner() {
     if (document.getElementById("timbre-banner")) return;
