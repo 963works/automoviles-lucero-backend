@@ -293,17 +293,24 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
       });
     } catch (e) {}
   }
+  function showBanner() {
+    if (document.getElementById("timbre-banner")) return;
+    var b = document.createElement("div");
+    b.id = "timbre-banner";
+    b.textContent = "🔔 Nueva alerta urgente -- toca aquí para verla";
+    b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#b3261e;color:#fff;font-size:20px;font-weight:700;text-align:center;padding:16px;cursor:pointer";
+    b.onclick = function () { location.href = "/crm"; };
+    document.body.appendChild(b);
+  }
   function check() {
     fetch("/crm/alertas-activas.json").then(function (r) { return r.json(); }).then(function (d) {
       var prev = seen();
       var ids = d.ids || [];
       var fresh = ids.filter(function (id) { return prev.indexOf(id) === -1; });
+      saveSeen(ids);
       if (fresh.length > 0) {
-        saveSeen(ids);
         ding();
-        setTimeout(function () { location.reload(); }, 900);
-      } else {
-        saveSeen(ids);
+        showBanner();
       }
     }).catch(function () {});
   }
