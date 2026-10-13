@@ -297,18 +297,26 @@ async function syncVoice(state) {
     pronunciation_dictionary: [{ word: "Carabanchel", alphabet: "ipa", phoneme: "kaɾaβanˈtʃel" }],
     webhook_url: WEBHOOK_URL,
     post_call_analysis_data: POST_CALL_ANALYSIS_DATA,
-    // 13/10/2026 (aviso real del negocio): las llamadas que llegan vía
-    // Coches.net/Wallapop reproducen primero un mensaje automático de la
-    // plataforma antes de conectar con el negocio -- si Miguel habla nada
-    // más descolgar, se solapa con ese aviso. Retraso prudente, no una
-    // detección real de silencio (Retell no expone eso) -- ajustar este
-    // número tras probar con una llamada real desde cada portal.
-    begin_message_delay_ms: 4000,
-    // responsiveness (0-1, 13/10/2026): más bajo = Miguel espera más antes
-    // de responder, para no cortar a un cliente que se queda pensando a
-    // media frase. No confundir con interruption_sensitivity (ese es al
-    // revés: si el CLIENTE puede interrumpir a Miguel, no esto).
-    responsiveness: 0.4,
+    // 13/10/2026: se probó un retraso fijo (begin_message_delay_ms) para que
+    // Miguel no se solapara con el aviso automático de Coches.net/Wallapop --
+    // FALLO REAL confirmado con una llamada normal: ese retraso es fijo y se
+    // aplica a TODAS las llamadas por igual (Retell no permite condicionarlo
+    // por origen), así que también dejaba callado a Miguel al principio de
+    // una llamada normal, donde no hace ninguna falta. Se quita: la sección
+    // correspondiente de prompt-voice.md ya le dice que escuche y juzgue si
+    // lo que oye es una locución de plataforma o una persona real, que es la
+    // única forma correcta de distinguir los dos casos. Se pone a 0 de forma
+    // explícita -- PATCH no borra un valor previo si simplemente se deja de
+    // enviar el campo, hay que mandarlo a 0 para que deje de aplicarse.
+    begin_message_delay_ms: 0,
+    // responsiveness (0-1): más bajo = Miguel espera más antes de responder,
+    // para no cortar a un cliente que se queda pensando a media frase. No
+    // confundir con interruption_sensitivity (ese es al revés: si el CLIENTE
+    // puede interrumpir a Miguel, no esto). FALLO REAL confirmado con una
+    // llamada real (13/10/2026): 0.4 se notaba lento respondiendo durante
+    // toda la conversación, no solo al principio -- se sube a 0.8, más ágil,
+    // sin llegar al 1.0 que sí cortaba a clientes pensando a media frase.
+    responsiveness: 0.8,
   });
   console.log("Nombre del agente + diccionario de pronunciación + webhook + análisis post-llamada actualizados.");
 

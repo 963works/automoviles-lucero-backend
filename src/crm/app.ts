@@ -58,7 +58,7 @@ type Appointment = {
   status: string;
   created_at: string;
 };
-type Handoff = { id: string; lead_phone: string | null; reason?: string; urgency?: string; notes?: string; reason_type?: string; status: string; created_at: string };
+type Handoff = { id: string; lead_phone: string | null; lead_name?: string | null; reason?: string; urgency?: string; notes?: string; reason_type?: string; status: string; created_at: string };
 type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; thread_id?: string; in_reply_to?: string; answered?: boolean; created_at: string };
 type VehicleOverride = { vehicle_id: string; price_eur: number };
 
@@ -320,10 +320,20 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
   // navegar de verdad -- así el AudioContext nunca se destruye y no hace
   // falta tocar nada para verlo ni para que el timbre siga funcionando.
   function softRefreshHoy() {
+    // Se extrae con indexOf/substring, no con un regex -- un regex aquí
+    // dentro de esta plantilla de TypeScript necesita las barras
+    // invertidas escapadas dos veces (una para TS, otra para el propio
+    // regex), y un fallo exacto en ese escapado rompió TODO este script
+    // la primera vez (13/10/2026) -- ni sonaba ni refrescaba nada, un
+    // error de sintaxis silencioso. Así no hay barras invertidas que
+    // puedan romperse.
     fetch("/crm").then(function (r) { return r.text(); }).then(function (html) {
-      var m = html.match(/<main>([\s\S]*)<\/main>/);
+      var start = html.indexOf("<main>");
+      var end = html.lastIndexOf("</main>");
       var main = document.querySelector("main");
-      if (m && main) main.innerHTML = m[1];
+      if (start !== -1 && end !== -1 && main) {
+        main.innerHTML = html.slice(start + 6, end);
+      }
     }).catch(function () {});
   }
   function check() {
@@ -724,7 +734,7 @@ crm.get("/pendientes", (req, res) => {
 ${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => `<div class="card ${h.reason_type === "reserva" ? "urgent" : h.urgency === "alta" ? "urgent" : "pending"}"><div class="info">
 <h3>${esc(h.reason ?? "Aviso")}</h3>
 <p><span class="tag ${h.reason_type === "reserva" || h.reason_type === "compra_inmediata" || h.urgency === "alta" ? "t-hot" : ""}">${h.reason_type === "reserva" ? "RESERVA 500€" : h.reason_type === "compra_inmediata" ? "Compra inmediata" : h.urgency === "alta" ? "Urgente" : "Normal"}</span></p>
-<p>Cliente: <b>${esc(h.lead_phone ?? "sin contacto")}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
+<p>Cliente: <b>${esc(h.lead_name ? `${h.lead_name} (${h.lead_phone ?? "sin teléfono"})` : h.lead_phone ?? "sin contacto")}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
 <form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}${isAdmin ? `<button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar este aviso para siempre? Úsalo solo para pruebas, no para avisos reales ya atendidos.')">Eliminar</button>` : ""}</form>
 </div></div>`).join("")}
 <h2>Correos para contestar (${mails.length})</h2>

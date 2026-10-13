@@ -65,16 +65,22 @@ export function createHandoff(args: {
   // reserva para que se pueda ver".
   reason_type?: "reserva" | "compra_inmediata" | "otro";
 }) {
+  // El nombre nunca lo manda quien llama a create_handoff -- se recupera del
+  // lead ya guardado por su teléfono (FALLO REAL detectado 13/10/2026: un
+  // aviso real -- Ángel, Nissan Qashqai -- se quedó sin nombre en la ficha
+  // porque create_handoff nunca lo guardaba, aunque create_lead sí lo tenía
+  // bien registrado un segundo antes en la misma llamada).
+  const lead = readCollection<{ phone: string | null; name: string | null }>("leads").find((l) => l.phone === args.lead_phone);
   const handoff = {
     id: crypto.randomUUID(),
     ...args,
+    lead_name: lead?.name ?? null,
     status: "requested",
     created_at: now(),
   };
   appendToCollection("handoffs", handoff);
   // Una derivación urgente (reserva de 500 € o compra inmediata) avisa a Ramón y José.
   if (args.urgency === "alta") {
-    const lead = readCollection<{ phone: string | null; name: string | null }>("leads").find((l) => l.phone === args.lead_phone);
     raiseAlert({
       kind: args.reason_type === "reserva" ? "reserva_pendiente" : "handoff_urgente",
       lead_phone: args.lead_phone ?? null,
