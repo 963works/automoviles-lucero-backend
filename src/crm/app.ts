@@ -7,7 +7,7 @@ import { currentVehicles } from "../data/vehicles-current.js";
 import { createReservationPending, confirmReservation, cancelReservation } from "../tools/reservations.js";
 import { getOfficialStatus, setOfficialStatus, type OfficialVehicleStatus } from "../tools/vehicle-state.js";
 import { deliverEmail } from "../email/agent.js";
-import { pendingAlerts, markAlertDone } from "../alerts/alerts.js";
+import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "../tools/agent-toggle.js";
 import {
   googleStatus,
@@ -452,6 +452,7 @@ crm.get("/", (req, res) => {
 <p>Aviso por correo: ${esc(emailLabels[a.email_status] ?? a.email_status)}</p>
 ${phoneLink(a.lead_phone)}
 <form method="post" action="/crm/alertas/${esc(a.id)}" style="display:inline"><button class="btn ok" type="submit">Ya le he llamado</button></form>
+${me(res).role === "admin" ? `<form method="post" action="/crm/alertas/${esc(a.id)}" style="display:inline"><button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar esta alerta para siempre? Úsalo solo para pruebas.')">Eliminar</button></form>` : ""}
 </div></div>`,
         )
         .join("")
@@ -994,6 +995,12 @@ crm.post("/integraciones/google/borrar-prueba", async (_req, res) => {
 
 // ---------- Avisos para llamar (cualquier usuario del CRM) ----------
 crm.post("/alertas/:id", (req, res) => {
+  const accion = String(req.body.accion ?? "atendido");
+  if (accion === "eliminar") {
+    if (me(res).role !== "admin") return back(res, "/crm", "Solo el administrador puede eliminar alertas");
+    if (!deleteAlert(req.params.id)) return back(res, "/crm", "No encuentro esa alerta");
+    return back(res, "/crm", "Alerta eliminada");
+  }
   if (!markAlertDone(req.params.id)) return back(res, "/crm", "No encuentro ese aviso");
   back(res, "/crm", "Aviso marcado como atendido");
 });

@@ -119,3 +119,12 @@ export function markAlertDone(id: string): boolean {
   );
   return true;
 }
+
+// Borrado real (13/10/2026), para alertas de prueba -- "atendida" las deja
+// registradas igualmente, esto las quita del todo.
+export function deleteAlert(id: string): boolean {
+  const all = readCollection<Alert>("alerts");
+  if (!all.some((a) => a.id === id)) return false;
+  writeCollection<Alert>("alerts", all.filter((a) => a.id !== id));
+  return true;
+}
