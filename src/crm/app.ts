@@ -261,16 +261,21 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
 //    reserva/alerta sin que nadie tenga que pulsar F5 a mano.
 (function () {
   var KEY = "lucero_seen_alerts";
+  // El AudioContext se crea YA (al cargar la página, no espera a nada) --
+  // nace "suspended" hasta que algo real lo reanude. El botón visible
+  // "Activar y probar el sonido" llama a resume() directamente dentro de
+  // su propio clic, que es la forma más fiable de desbloquearlo (mejor
+  // que esperar un clic cualquiera en cualquier sitio, que es más fácil
+  // que falle o pase desapercibido).
   var ctx = null;
-  function unlock() {
-    if (ctx) return;
-    try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) {}
-  }
+  try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
   ["click", "keydown", "touchstart"].forEach(function (evt) {
-    document.addEventListener(evt, unlock, { once: true, passive: true });
+    document.addEventListener(evt, function () { if (ctx && ctx.state === "suspended") ctx.resume(); }, { passive: true });
   });
+  window.lucerosonar = function () {
+    if (ctx && ctx.state === "suspended") ctx.resume();
+    ding();
+  };
   function seen() { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } }
   function saveSeen(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
   function ding() {
@@ -532,6 +537,7 @@ ${me(res).role === "admin" ? `<form method="post" action="/crm/alertas/${esc(a.i
     ? `<div class="todo"><h2 style="margin-top:0">Lo que tienes que hacer</h2>${todo.slice(0, 8).map((t) => `<a href="${t.href}">→ ${esc(t.text)}</a>`).join("")}</div>`
     : `<div class="allok">Todo hecho. No hay nada pendiente.</div>`;
   const body = `<h1>Hoy</h1><p class="sub">${esc(d.weekday)} ${esc(d.day)} de ${esc(d.month)}</p>
+<div class="box noprint"><button class="btn ok" type="button" onclick="window.lucerosonar && window.lucerosonar()">🔔 Activar y probar el sonido de avisos</button><p class="sub" style="margin:8px 0 0">Púlsalo una vez al abrir el CRM cada día -- oirás un pitido de prueba ahora mismo. A partir de ahí, sonará solo cuando llegue un aviso urgente, sin que tengas que hacer nada más.</p></div>
 <form class="search noprint" method="get" action="/crm/buscar"><input name="q" placeholder="Buscar: nombre, teléfono o coche" required><button class="btn" type="submit">Buscar</button></form>
 <div class="box"><p style="margin:0;font-size:22px"><b>${esc(todaySummary(today))}</b></p></div>
 <div class="stats">
