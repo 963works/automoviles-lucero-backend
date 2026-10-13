@@ -603,6 +603,12 @@ crm.post("/citas/:id", (req, res) => {
   const appts = list<Appointment>("appointments");
   const a = appts.find((x) => x.id === req.params.id);
   if (!a) return back(res, "/crm/citas", "No encuentro esa visita");
+  if (accion === "eliminar") {
+    if (me(res).role !== "admin") return back(res, "/crm/citas", "Solo el administrador puede eliminar visitas");
+    if (a.status !== "cancelled") return back(res, "/crm/citas", "Solo se pueden eliminar visitas ya canceladas");
+    save("appointments", appts.filter((x) => x.id !== a.id));
+    return back(res, "/crm/citas", "Visita eliminada");
+  }
   if (accion === "confirmar") a.status = "confirmed";
   else if (accion === "cancelar") a.status = "cancelled";
   else if (accion === "cambiar") {
