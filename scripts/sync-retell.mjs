@@ -42,6 +42,16 @@ const POST_CALL_ANALYSIS_DATA = [
     choices: ["COLD", "WARM", "HOT"],
   },
   {
+    // 13/10/2026, encargo de transferencias reales: registro honesto de qué
+    // pasó con cualquier intento de transfer_to_ramon/transfer_to_jose en
+    // ESTA llamada. Limitación real (no inventar lo contrario): Retell no
+    // expone un evento en vivo por cada intento de transferencia, así que
+    // esto se registra al terminar la llamada completa, no paso a paso.
+    type: "enum", name: "transfer_outcome",
+    description: "Qué pasó con la transferencia en esta llamada, si se intentó alguna. 'no_aplico' si nunca se intentó transferir.",
+    choices: ["no_aplico", "transferido_ramon", "transferido_jose", "ninguno_respondio_registrado"],
+  },
+  {
     type: "string", name: "issues_detected",
     description: "Registro de incidencias (Sección de memoria/aprendizaje, 01/10/2026): detecta cualquier fallo real del agente IA en ESTA conversación -- pronunciación incorrecta o rara, información inventada o incorrecta, repeticiones molestas de la misma frase, quejas explícitas del cliente sobre el agente (ej. 'no me entiendes', 'ya me lo dijiste'), confusión o malentendidos, silencios largos sin respuesta. Resume cada fallo encontrado en una frase corta y concreta, separados por ' | ' si hay varios. Si no detectas ningún fallo real, responde EXACTAMENTE la palabra 'ninguno' -- no inventes un fallo que no esté en la conversación.",
   },

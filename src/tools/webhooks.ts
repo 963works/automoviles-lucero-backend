@@ -37,6 +37,11 @@ export function handleRetellWebhook(payload: any) {
     // arriba pero para intentos de ataque/abuso (prompt injection, falsa
     // autoridad, etc.) -- aplanado para el panel.
     security_event: analysis.custom_analysis_data?.security_event ?? null,
+    // transfer_outcome (13/10/2026, transferencias reales a Ramón/José):
+    // igual que arriba, aplanado para que el panel lo muestre sin abrir el
+    // JSON. Lo rellena el propio análisis de Retell leyendo la llamada
+    // real -- no es un evento en vivo por cada intento.
+    transfer_outcome: analysis.custom_analysis_data?.transfer_outcome ?? null,
     custom_analysis_data: analysis.custom_analysis_data ?? {},
     created_at: new Date().toISOString(),
   };
