@@ -307,6 +307,16 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
     b.onclick = function () { location.href = "/crm"; };
     document.body.appendChild(b);
   }
+  // En la propia página Hoy: sustituye el contenido por el nuevo sin
+  // navegar de verdad -- así el AudioContext nunca se destruye y no hace
+  // falta tocar nada para verlo ni para que el timbre siga funcionando.
+  function softRefreshHoy() {
+    fetch("/crm").then(function (r) { return r.text(); }).then(function (html) {
+      var m = html.match(/<main>([\s\S]*)<\/main>/);
+      var main = document.querySelector("main");
+      if (m && main) main.innerHTML = m[1];
+    }).catch(function () {});
+  }
   function check() {
     fetch("/crm/alertas-activas.json").then(function (r) { return r.json(); }).then(function (d) {
       var prev = seen();
@@ -315,7 +325,8 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
       saveSeen(ids);
       if (fresh.length > 0) {
         ding();
-        showBanner();
+        if (location.pathname === "/crm" || location.pathname === "/crm/") softRefreshHoy();
+        else showBanner();
       }
     }).catch(function () {});
   }
