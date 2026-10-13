@@ -307,15 +307,10 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
       playTones();
     }
   }
-  function showBanner() {
-    if (document.getElementById("timbre-banner")) return;
-    var b = document.createElement("div");
-    b.id = "timbre-banner";
-    b.textContent = "🔔 Nueva alerta urgente -- toca aquí para verla";
-    b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#b3261e;color:#fff;font-size:20px;font-weight:700;text-align:center;padding:16px;cursor:pointer";
-    b.onclick = function () { location.href = "/crm"; };
-    document.body.appendChild(b);
-  }
+  // Quitado el aviso visual en pantalla (13/10/2026, a petición real): si
+  // Ramón/José están lejos del ordenador no lo van a leer -- lo único que
+  // de verdad avisa ahí es el sonido, así que el timbre suena igual en
+  // cualquier página, sin depender de un aviso visual que nadie va a ver.
   // En la propia página Hoy: sustituye el contenido por el nuevo sin
   // navegar de verdad -- así el AudioContext nunca se destruye y no hace
   // falta tocar nada para verlo ni para que el timbre siga funcionando.
@@ -345,7 +340,6 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
       if (fresh.length > 0) {
         ding();
         if (location.pathname === "/crm" || location.pathname === "/crm/") softRefreshHoy();
-        else showBanner();
       }
     }).catch(function () {});
   }
