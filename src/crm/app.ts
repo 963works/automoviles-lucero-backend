@@ -379,6 +379,13 @@ function reservationCard(r: Reservation, user: CrmUser): string {
   if (r.status === "confirmed" && !sold && canConfirmPayments(user)) actions.push(confirmButton("Coche vendido y entregado", "vendido", "ok", "¿Seguro que el coche ya está vendido y entregado?"));
   if (sold) actions.unshift(`<span class="tag" style="background:#e5e7eb">Coche vendido y entregado</span>`);
   if (r.status === "pending_payment" || r.status === "pending_verification") actions.push(confirmButton("Cancelar la reserva", "cancelar", "danger", "¿Seguro que quieres cancelar esta reserva?"));
+  // Papelera real (13/10/2026): solo para reservas ya cerradas (canceladas o
+  // caducadas) y solo el administrador -- una reserva viva nunca se borra
+  // sin pasar antes por cancelar/confirmar, para no perder el rastro de un
+  // pago real a medio gestionar.
+  if ((r.status === "cancelled" || r.status === "expired") && user.role === "admin") {
+    actions.push(confirmButton("Eliminar", "eliminar", "danger", `"${veh}" se borra para siempre del registro, no se puede deshacer.`));
+  }
   const whatsapp = r.status === "pending_payment"
     ? waButton(r.lead_phone, `Hola, le escribe Automóviles Lucero. Para apartar el ${veh} necesitamos 500 €. Cuando haga el pago, envíenos el justificante por aquí. Gracias.`)
     : "";
@@ -584,6 +591,14 @@ crm.post("/reservas/:id", (req, res) => {
   if (accion === "vendido") {
     setOfficialStatus(r.vehicle_id, "SOLD", r.id);
     return res.redirect(`/crm/reservas?msg=${encodeURIComponent("Anotado: coche vendido")}#r-${r.id}`);
+  }
+  if (accion === "eliminar") {
+    if (me(res).role !== "admin") return back(res, "/crm/reservas", "Solo el administrador puede eliminar reservas");
+    if (r.status !== "cancelled" && r.status !== "expired") {
+      return back(res, "/crm/reservas", "Solo se pueden eliminar reservas ya canceladas o caducadas");
+    }
+    save("reservations", reservations.filter((x) => x.id !== r.id));
+    return back(res, "/crm/reservas", "Reserva eliminada");
   }
   back(res, "/crm/reservas", "No entendí esa acción");
 });
