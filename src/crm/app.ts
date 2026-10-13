@@ -249,18 +249,34 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
 <form method="post" action="/crm/salir" style="margin:0"><button class="btn light" type="submit">Salir</button></form></header>
 <main>${msg ? `<div class="msg">${esc(msg)}</div>` : ""}${body}</main>
 <script>
-// Timbre real (13/10/2026): avisa con un sonido tipo "ding" cuando aparece
-// una alerta urgente nueva (lead caliente, reserva, escalado) -- comprueba
-// cada 20s en cualquier página del CRM, generado con Web Audio (sin
-// archivo de audio que alojar), y recuerda en localStorage qué ya sonó
-// para no repetir la misma alerta en cada recarga.
+// Timbre real (13/10/2026, corregido tras probarlo en vivo): avisa con un
+// sonido tipo "ding" y refresca la página sola cuando aparece una alerta
+// urgente nueva (lead caliente, reserva, escalado) -- comprueba cada 15s en
+// cualquier página del CRM. Dos fallos reales detectados en la primera
+// versión, ya arreglados:
+// 1) Los navegadores bloquean el audio hasta que haya una interacción real
+//    (clic, tecla, toque) -- el AudioContext se crea una sola vez y se
+//    "desbloquea" en la primera interacción, no al cargar la página.
+// 2) No bastaba con sonar -- había que recargar sola la página para ver la
+//    reserva/alerta sin que nadie tenga que pulsar F5 a mano.
 (function () {
   var KEY = "lucero_seen_alerts";
+  var ctx = null;
+  function unlock() {
+    if (ctx) return;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {}
+  }
+  ["click", "keydown", "touchstart"].forEach(function (evt) {
+    document.addEventListener(evt, unlock, { once: true, passive: true });
+  });
   function seen() { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } }
   function saveSeen(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
   function ding() {
+    if (!ctx) return; // todavía sin desbloquear por una interacción -- no se puede sonar, pero sí recargamos
     try {
-      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === "suspended") ctx.resume();
       [0, 0.15].forEach(function (delay, i) {
         var o = ctx.createOscillator(), g = ctx.createGain();
         o.type = "sine"; o.frequency.value = i === 0 ? 880 : 1175;
@@ -276,12 +292,17 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
       var prev = seen();
       var ids = d.ids || [];
       var fresh = ids.filter(function (id) { return prev.indexOf(id) === -1; });
-      if (fresh.length > 0) ding();
-      saveSeen(ids);
+      if (fresh.length > 0) {
+        saveSeen(ids);
+        ding();
+        setTimeout(function () { location.reload(); }, 900);
+      } else {
+        saveSeen(ids);
+      }
     }).catch(function () {});
   }
   check();
-  setInterval(check, 20000);
+  setInterval(check, 15000);
 })();
 </script>
 </body></html>`;
