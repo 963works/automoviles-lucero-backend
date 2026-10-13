@@ -274,16 +274,22 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
   function seen() { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } }
   function saveSeen(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
   function ding() {
+    // Estilo "Tri-tone" de iPhone (13/10/2026, a petición): tres notas
+    // cortas, brillantes y ascendentes en rápida sucesión -- no es el
+    // archivo exacto de Apple (no se puede ni se debe copiar), pero sí el
+    // mismo estilo general.
     if (!ctx) return; // todavía sin desbloquear por una interacción -- no se puede sonar, pero sí recargamos
     try {
       if (ctx.state === "suspended") ctx.resume();
-      [0, 0.15].forEach(function (delay, i) {
+      [1046.5, 1318.5, 1568].forEach(function (freq, i) {
+        var delay = i * 0.11;
         var o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = "sine"; o.frequency.value = i === 0 ? 880 : 1175;
+        o.type = "triangle"; o.frequency.value = freq;
         o.connect(g); g.connect(ctx.destination);
-        g.gain.setValueAtTime(0.2, ctx.currentTime + delay);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.35);
-        o.start(ctx.currentTime + delay); o.stop(ctx.currentTime + delay + 0.35);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + delay);
+        g.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + delay + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.22);
+        o.start(ctx.currentTime + delay); o.stop(ctx.currentTime + delay + 0.22);
       });
     } catch (e) {}
   }
