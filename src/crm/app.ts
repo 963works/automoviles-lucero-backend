@@ -247,7 +247,44 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
 <header><strong>Automóviles Lucero</strong>
 <nav>${menu.map(([href, label]) => `<a href="${href}" class="${section === label ? "on" : ""}">${label}</a>`).join("")}</nav>
 <form method="post" action="/crm/salir" style="margin:0"><button class="btn light" type="submit">Salir</button></form></header>
-<main>${msg ? `<div class="msg">${esc(msg)}</div>` : ""}${body}</main></body></html>`;
+<main>${msg ? `<div class="msg">${esc(msg)}</div>` : ""}${body}</main>
+<script>
+// Timbre real (13/10/2026): avisa con un sonido tipo "ding" cuando aparece
+// una alerta urgente nueva (lead caliente, reserva, escalado) -- comprueba
+// cada 20s en cualquier página del CRM, generado con Web Audio (sin
+// archivo de audio que alojar), y recuerda en localStorage qué ya sonó
+// para no repetir la misma alerta en cada recarga.
+(function () {
+  var KEY = "lucero_seen_alerts";
+  function seen() { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; } }
+  function saveSeen(a) { try { localStorage.setItem(KEY, JSON.stringify(a)); } catch (e) {} }
+  function ding() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.15].forEach(function (delay, i) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = i === 0 ? 880 : 1175;
+        o.connect(g); g.connect(ctx.destination);
+        g.gain.setValueAtTime(0.2, ctx.currentTime + delay);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.35);
+        o.start(ctx.currentTime + delay); o.stop(ctx.currentTime + delay + 0.35);
+      });
+    } catch (e) {}
+  }
+  function check() {
+    fetch("/crm/alertas-activas.json").then(function (r) { return r.json(); }).then(function (d) {
+      var prev = seen();
+      var ids = d.ids || [];
+      var fresh = ids.filter(function (id) { return prev.indexOf(id) === -1; });
+      if (fresh.length > 0) ding();
+      saveSeen(ids);
+    }).catch(function () {});
+  }
+  check();
+  setInterval(check, 20000);
+})();
+</script>
+</body></html>`;
 }
 
 // Campo de contraseña con un botón para ver u ocultar el texto.
@@ -605,6 +642,12 @@ crm.post("/reservas/:id", (req, res) => {
 });
 
 // ---------- Pendientes (avisos de Miguel y correos) ----------
+// Para el timbre (ver script en page()): lista de IDs de alertas urgentes
+// activas ahora mismo, para que el navegador detecte cuáles son nuevas.
+crm.get("/alertas-activas.json", (_req, res) => {
+  res.json({ ids: pendingAlerts().map((a) => a.id) });
+});
+
 crm.get("/pendientes", (req, res) => {
   const isAdmin = me(res).role === "admin";
   const handoffs = list<Handoff>("handoffs").filter((h) => h.status === "requested").sort((a, b) => b.created_at.localeCompare(a.created_at));
