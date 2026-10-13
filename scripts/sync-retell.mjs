@@ -297,6 +297,18 @@ async function syncVoice(state) {
     pronunciation_dictionary: [{ word: "Carabanchel", alphabet: "ipa", phoneme: "kaɾaβanˈtʃel" }],
     webhook_url: WEBHOOK_URL,
     post_call_analysis_data: POST_CALL_ANALYSIS_DATA,
+    // 13/10/2026 (aviso real del negocio): las llamadas que llegan vía
+    // Coches.net/Wallapop reproducen primero un mensaje automático de la
+    // plataforma antes de conectar con el negocio -- si Miguel habla nada
+    // más descolgar, se solapa con ese aviso. Retraso prudente, no una
+    // detección real de silencio (Retell no expone eso) -- ajustar este
+    // número tras probar con una llamada real desde cada portal.
+    begin_message_delay_ms: 4000,
+    // responsiveness (0-1, 13/10/2026): más bajo = Miguel espera más antes
+    // de responder, para no cortar a un cliente que se queda pensando a
+    // media frase. No confundir con interruption_sensitivity (ese es al
+    // revés: si el CLIENTE puede interrumpir a Miguel, no esto).
+    responsiveness: 0.4,
   });
   console.log("Nombre del agente + diccionario de pronunciación + webhook + análisis post-llamada actualizados.");
 
