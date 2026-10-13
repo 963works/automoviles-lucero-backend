@@ -605,6 +605,7 @@ crm.post("/reservas/:id", (req, res) => {
 
 // ---------- Pendientes (avisos de Miguel y correos) ----------
 crm.get("/pendientes", (req, res) => {
+  const isAdmin = me(res).role === "admin";
   const handoffs = list<Handoff>("handoffs").filter((h) => h.status === "requested").sort((a, b) => b.created_at.localeCompare(a.created_at));
   const mails = list<InboxMail>("email_inbox").filter((m) => m.outcome !== "automated_no_reply" && !m.answered).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const body = `<h1>Pendientes</h1>
@@ -614,7 +615,7 @@ ${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.m
 <h3>${esc(h.reason ?? "Aviso")}</h3>
 <p><span class="tag ${h.reason_type === "reserva" || h.reason_type === "compra_inmediata" || h.urgency === "alta" ? "t-hot" : ""}">${h.reason_type === "reserva" ? "RESERVA 500€" : h.reason_type === "compra_inmediata" ? "Compra inmediata" : h.urgency === "alta" ? "Urgente" : "Normal"}</span></p>
 <p>Cliente: <b>${esc(h.lead_phone ?? "sin contacto")}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
-<form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}</form>
+<form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}${isAdmin ? `<button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar este aviso para siempre? Úsalo solo para pruebas, no para avisos reales ya atendidos.')">Eliminar</button>` : ""}</form>
 </div></div>`).join("")}
 <h2>Correos para contestar (${mails.length})</h2>
 ${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` : mails.map((m) => `<div class="card pending"><div class="info">
@@ -631,9 +632,15 @@ ${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` 
 });
 
 crm.post("/avisos/:id", (req, res) => {
+  const accion = String(req.body.accion ?? "atendido");
   const items = list<Handoff>("handoffs");
   const h = items.find((x) => x.id === req.params.id);
   if (!h) return back(res, "/crm/pendientes", "No encuentro ese aviso");
+  if (accion === "eliminar") {
+    if (me(res).role !== "admin") return back(res, "/crm/pendientes", "Solo el administrador puede eliminar avisos");
+    save("handoffs", items.filter((x) => x.id !== h.id));
+    return back(res, "/crm/pendientes", "Aviso eliminado");
+  }
   h.status = "done";
   save("handoffs", items);
   back(res, "/crm/pendientes", "Aviso atendido");
