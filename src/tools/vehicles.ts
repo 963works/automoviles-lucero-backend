@@ -27,6 +27,16 @@ const CATEGORY_SYNONYMS: Record<string, string> = {
   monovolumen: normalize("Monovolumen"),
 };
 
+// Todas las marcas reales del inventario cargado, para el aviso de "quizá
+// quisiste decir" de más abajo (Sección FALLO REAL 14/10/2026: la voz
+// transcribe fatal los nombres de modelo -- "Rav4" como "Rasp cuatro",
+// "Aygo" como "Aigo" -- así que una búsqueda de texto libre falla aunque el
+// coche exista. Esto no depende de que el agente se acuerde de reintentar:
+// el propio resultado de la búsqueda ya lleva la pista).
+function knownMakes(): string[] {
+  return [...new Set(currentVehicles().map((v) => v.make))];
+}
+
 export function searchVehicles(args: {
   query?: string;
   make?: string;
@@ -69,6 +79,28 @@ export function searchVehicles(args: {
 
   const pageResultsWithStatus = pageResults.map((v) => ({ ...v, official_status: getOfficialStatus(v.id) }));
 
+  // Si la búsqueda de texto libre no encontró nada, pero el texto menciona
+  // una marca real del inventario, se adjuntan TODOS los modelos de esa
+  // marca como sugerencia -- así el agente no depende de acordarse de
+  // reintentar manualmente cuando el modelo viene mal transcrito por voz.
+  let sameMakeSuggestions: (Vehicle & { official_status: string })[] = [];
+  if (results.length === 0 && q) {
+    // Coincide por palabra significativa de la marca, no por el nombre
+    // completo -- "Mercedes-Benz" hay que reconocerlo si el cliente solo
+    // dice "Mercedes" (nadie dice "Mercedes-Benz" entero hablando).
+    const matchedMake = knownMakes().find((make) =>
+      normalize(make)
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length >= 3)
+        .some((word) => q.includes(word)),
+    );
+    if (matchedMake) {
+      sameMakeSuggestions = currentVehicles()
+        .filter((v) => v.make === matchedMake)
+        .map((v) => ({ ...v, official_status: getOfficialStatus(v.id) }));
+    }
+  }
+
   return envelope({
     status: results.length === 0 ? "not_found" : "ok",
     data: {
@@ -79,6 +111,10 @@ export function searchVehicles(args: {
       page_size: PAGE_SIZE,
       total_pages: Math.max(1, Math.ceil(results.length / PAGE_SIZE)),
       results: pageResultsWithStatus,
+      // Si "results" viene vacío pero esto no, el cliente mencionó una marca
+      // real -- compara estos modelos con lo que dijo (fonéticamente, la voz
+      // transcribe mal) antes de decir que no lo tenemos.
+      same_make_suggestions: sameMakeSuggestions,
     },
     source: "Coches.net PRO (exportación oficial del negocio, feed XML) -- refrescado 14/10/2026. NO es un feed en vivo todavía.",
     source_updated_at: "2026-10-14",
