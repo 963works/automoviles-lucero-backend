@@ -20,10 +20,52 @@ const INTERESTED = [
   /\b(car|cars|van|vans|price|how much|appointment|finance|financing|test drive|buy|reserve|sell my car)\b/i,
 ];
 
+// Documentación sensible (encargo real, 14/10/2026): nunca se contesta
+// automáticamente aunque el correo también mencione algo comercial de
+// pasada -- se revisa a mano, sin tocar ni procesar esos documentos.
+const SENSITIVE_DOCS = [
+  /\b(factura|facturaci[oó]n|albar[aá]n)\b/i,
+  /\b(n[oó]mina|n[oó]minas|seguridad social)\b/i,
+  /\b(extracto\s+bancario|iban\b|n[uú]mero\s+de\s+cuenta|tarjeta\s+de\s+cr[eé]dito)\b/i,
+  /\b(dni|n[ieí]e|pasaporte|documento\s+de\s+identidad)\b/i,
+  /\b(contrato\s+(de\s+)?(trabajo|arrendamiento|alquiler|laboral))\b/i,
+];
+
+// Portales de compraventa (encargo real, 14/10/2026): se detecta el origen
+// para dejarlo registrado en el CRM, y sobre todo para distinguir el caso
+// en que el propio portal exige responder desde su chat/app -- contestar
+// por correo a esa notificación no le llega de verdad al comprador.
+const PORTAL_SENDERS: { match: RegExp; name: string }[] = [
+  { match: /coches\.net/i, name: "Coches.net" },
+  { match: /milanuncios\.com/i, name: "Milanuncios" },
+  { match: /wallapop\.com/i, name: "Wallapop" },
+];
+const PORTAL_MANAGE_ELSEWHERE = [
+  /gestionar\s+(el\s+)?chat/i,
+  /responde(r)?\s+desde\s+la\s+app/i,
+  /ver\s+(el\s+)?mensaje\s+en\s+(la\s+)?(app|plataforma|web)/i,
+  /abre\s+la\s+app\s+para\s+responder/i,
+  /descarga\s+la\s+app/i,
+];
+
+export type PortalInfo = { portal: string | null; mustManageOnPortal: boolean };
+
+export function detectPortal(input: { from: string; subject: string; text: string }): PortalInfo {
+  const hay = `${input.from}\n${input.subject}\n${input.text}`;
+  const found = PORTAL_SENDERS.find((p) => p.match.test(hay));
+  return {
+    portal: found?.name ?? null,
+    mustManageOnPortal: PORTAL_MANAGE_ELSEWHERE.some((r) => r.test(input.text)),
+  };
+}
+
 export type InterestDecision = { interested: boolean; reason: string };
 
 export function decideInterest(input: { subject: string; text: string; hasPriorThread: boolean }): InterestDecision {
   const body = `${input.subject}\n${input.text}`;
+  if (SENSITIVE_DOCS.some((r) => r.test(body))) {
+    return { interested: false, reason: "documento_sensible_revision_humana" };
+  }
   if (AUTOMATED_ONLY.some((r) => r.test(body))) {
     return { interested: false, reason: "correo_masivo_o_baja" };
   }

@@ -59,7 +59,7 @@ type Appointment = {
   created_at: string;
 };
 type Handoff = { id: string; lead_phone: string | null; lead_name?: string | null; reason?: string; urgency?: string; notes?: string; reason_type?: string; status: string; created_at: string };
-type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; thread_id?: string; in_reply_to?: string; answered?: boolean; created_at: string };
+type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; portal?: string | null; draft_note?: string; thread_id?: string; in_reply_to?: string; answered?: boolean; created_at: string };
 type VehicleOverride = { vehicle_id: string; price_eur: number };
 
 const RESERVATION_TEXT: Record<string, string> = {
@@ -732,10 +732,12 @@ ${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.m
 <form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}${isAdmin ? `<button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar este aviso para siempre? Úsalo solo para pruebas, no para avisos reales ya atendidos.')">Eliminar</button>` : ""}</form>
 </div></div>`).join("")}
 <h2>Correos para contestar (${mails.length})</h2>
-${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` : mails.map((m) => `<div class="card pending"><div class="info">
+${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` : mails.map((m) => `<div class="card ${m.outcome === "pendiente_gestion_portal" ? "urgent" : "pending"}"><div class="info">
 <h3>${esc(m.subject || "(sin asunto)")}</h3>
-<p>De: <b>${esc(m.from)}</b> · ${esc(fmtDate(m.created_at))}</p>
+<p>De: <b>${esc(m.from)}</b>${m.portal ? ` · <span class="tag">${esc(m.portal)}</span>` : ""} · ${esc(fmtDate(m.created_at))}</p>
+${m.outcome === "pendiente_gestion_portal" ? `<p><b>Hay que responder desde ${esc(m.portal ?? "el portal")}, no por correo</b> -- este correo es solo un aviso, al comprador no le llega una respuesta aquí.</p>` : ""}
 <div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
+${m.draft_note ? `<p style="margin-top:10px"><b>Borrador para copiar en ${esc(m.portal ?? "el portal")}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
 <form method="post" action="/crm/correos/${esc(m.id)}">
 <label>Tu respuesta (si no escribes nada, no se envía nada)</label>
 <textarea name="respuesta" rows="4"></textarea>
