@@ -495,19 +495,26 @@ function reservationCard(r: Reservation, user: CrmUser): string {
 <p><span class="tag">${esc(sold ? "Vendido" : RESERVATION_TEXT[r.status] ?? r.status)}</span><span class="tag">${r.amount_eur} €</span></p>
 <p>Cliente: <b>${esc(r.lead_phone ?? "sin contacto")}</b></p>
 <p>Desde el ${esc(fmtDate(r.created_at))}${r.verified_by ? ` · confirmada por ${esc(r.verified_by)}` : ""}</p>
-<form method="post" action="/crm/reservas/${esc(r.id)}">${actions.join("")}${phoneLink(r.lead_phone)}${whatsapp}</form>
+<form method="post" action="/crm/reservas/${esc(r.id)}">${actions.join("")}${phoneLink(r.lead_phone)}${whatsapp}
+<div class="row"><div><label>✏️ Teléfono del cliente</label><input name="telefono" value="${esc(r.lead_phone ?? "")}"></div>
+<div><label>✏️ Importe (€)</label><input type="number" name="importe" value="${r.amount_eur}" min="0"></div></div>
+<button class="btn light" type="submit" name="accion" value="editar">Guardar cambios</button>
+</form>
 </div></div>`;
 }
 
-function leadCard(l: Lead): string {
+function leadCard(l: Lead, user: CrmUser): string {
   const t = TEMP[l.temperature] ?? TEMP.COLD;
   const whatsapp = waButton(l.phone, "Hola, le escribe Automóviles Lucero. ¿En qué le podemos ayudar?");
+  const del = user.role === "admin"
+    ? `<form method="post" action="/crm/clientes/${esc(l.id)}" style="display:inline">${confirmButton("Eliminar", "eliminar", "danger", `¿Eliminar a "${l.name || l.phone || "este cliente"}"? Se puede restaurar luego desde la Papelera.`)}</form>`
+    : "";
   return `<div class="card"><div class="info">
 <h3>${esc(l.name || l.phone || "Sin nombre")}</h3>
 <p><span class="tletra ${t.cls}">${t.letter}</span><span class="tag ${t.cls}">${esc(t.label)}</span> <span class="origen">${esc(ORIGIN[l.origin ?? l.channel ?? ""] ?? "Origen sin registrar")}</span>${l.do_not_contact ? `<span class="tag">No volver a escribir</span>` : ""}</p>
 <p><b>${esc(situation(l))}</b></p>
 <p>Último contacto: ${esc(fmtDate(l.updated_at ?? l.created_at))}</p>
-<a class="btn" href="/crm/clientes/${esc(l.id)}">Ver ficha</a>${phoneLink(l.phone)}${whatsapp}
+<a class="btn" href="/crm/clientes/${esc(l.id)}">✏️ Editar / ver ficha</a>${phoneLink(l.phone)}${whatsapp}${del}
 </div></div>`;
 }
 
@@ -589,7 +596,7 @@ crm.get("/buscar", (req, res) => {
   const cars = q ? currentVehicles().filter((v) => match(vehicleName(v.id))) : [];
   const found = leads.length + appts.length + resv.length + cars.length;
   const body = `<h1>Buscar</h1><p class="sub">${q ? `Resultados para "${esc(q)}": ${found}` : "Escribe algo arriba."}</p>
-${leads.map(leadCard).join("")}
+${leads.map((l) => leadCard(l, me(res))).join("")}
 ${appts.map(apptCard).join("")}
 ${resv.map((r) => reservationCard(r, me(res))).join("")}
 ${cars.map((v) => `<div class="card"><div class="info"><h3>${esc(vehicleName(v.id))}</h3><p>${esc(priceOf(v.id).toLocaleString("es-ES"))} €</p><a class="btn" href="/crm/coches/${esc(v.id)}">Ver coche</a></div></div>`).join("")}
@@ -711,6 +718,14 @@ crm.post("/reservas/:id", (req, res) => {
     save("reservations", reservations.filter((x) => x.id !== r.id));
     return back(res, "/crm/reservas", "Reserva movida a la papelera");
   }
+  if (accion === "editar") {
+    const telefono = String(req.body.telefono ?? "").trim();
+    const importe = Number(req.body.importe);
+    if (telefono) r.lead_phone = telefono;
+    if (Number.isFinite(importe) && importe >= 0) r.amount_eur = importe;
+    save("reservations", reservations);
+    return back(res, "/crm/reservas", "Cambios guardados");
+  }
   back(res, "/crm/reservas", "No entendí esa acción");
 });
 
@@ -799,7 +814,7 @@ crm.get("/clientes", (req, res) => {
   const body = `<h1>Clientes</h1>
 <p class="sub">Miguel anota solo lo que quiere cada cliente. Tú solo lo lees y llamas si hace falta.</p>
 <div class="legend">${pill("todos", "Todos")} ${pill("HOT", "Caliente", "t-hot")} ${pill("WARM", "Tibio", "t-warm")} ${pill("COLD", "Frío", "t-cold")}</div>
-${leads.length === 0 ? `<div class="empty">Todavía no hay clientes en esta lista.</div>` : leads.map(leadCard).join("")}`;
+${leads.length === 0 ? `<div class="empty">Todavía no hay clientes en esta lista.</div>` : leads.map((l) => leadCard(l, me(res))).join("")}`;
   res.type("html").send(page("Clientes", me(res), body, msgOf(req)));
 });
 
@@ -819,9 +834,12 @@ crm.get("/clientes/:id", (req, res) => {
 <p><b>Reservas:</b> ${resv.length === 0 ? "ninguna" : resv.map((r) => `${esc(vehicleName(r.vehicle_id))}: ${esc(RESERVATION_TEXT[r.status] ?? r.status)}`).join(" · ")}</p>
 ${phoneLink(lead.phone)}</div>
 <form class="box" method="post" action="/crm/clientes/${esc(lead.id)}">
+<label>✏️ Nombre</label><input name="nombre" value="${esc(lead.name ?? "")}">
+<label>✏️ Coche de interés</label><input name="vehicle_interest" value="${esc(lead.vehicle_interest ?? "")}">
 <label>Notas para el equipo</label><textarea name="notes" rows="3">${esc(lead.notes ?? "")}</textarea>
-<button class="btn ok" type="submit" name="accion" value="guardar">Guardar notas</button>
+<button class="btn ok" type="submit" name="accion" value="guardar">Guardar cambios</button>
 ${lead.do_not_contact ? button("Volver a escribirle", "reactivar", "light") : button("No volver a escribirle", "no_contactar", "danger")}
+${me(res).role === "admin" ? confirmButton("Eliminar cliente", "eliminar", "danger", `¿Eliminar a "${lead.name || lead.phone || "este cliente"}"? Se puede restaurar luego desde la Papelera.`) : ""}
 </form>`;
   res.type("html").send(page("Clientes", me(res), body, msgOf(req)));
 });
@@ -831,12 +849,26 @@ crm.post("/clientes/:id", (req, res) => {
   const lead = leads.find((l) => l.id === req.params.id);
   if (!lead) return back(res, "/crm/clientes", "No encuentro ese cliente");
   const accion = String(req.body.accion ?? "guardar");
+  if (accion === "eliminar") {
+    if (me(res).role !== "admin") return back(res, `/crm/clientes/${lead.id}`, "Solo el administrador puede eliminar clientes");
+    moveToTrash("leads", lead, `Cliente: ${lead.name || lead.phone || "sin nombre"}`, me(res).email);
+    save("leads", leads.filter((x) => x.id !== lead.id));
+    return back(res, "/crm/clientes", "Cliente movido a la papelera");
+  }
   if (accion === "no_contactar") lead.do_not_contact = true;
   else if (accion === "reactivar") lead.do_not_contact = false;
-  else lead.notes = String(req.body.notes ?? "").trim() || null;
+  else {
+    // El teléfono NO se edita aquí a propósito: es la clave con la que
+    // casan las visitas y reservas de este cliente (situation(), la propia
+    // ficha), y cambiarlo a mano las dejaría huérfanas sin que nadie se dé
+    // cuenta.
+    lead.name = String(req.body.nombre ?? "").trim() || null;
+    lead.vehicle_interest = String(req.body.vehicle_interest ?? "").trim() || null;
+    lead.notes = String(req.body.notes ?? "").trim() || null;
+  }
   lead.updated_at = now();
   save("leads", leads);
-  back(res, `/crm/clientes/${lead.id}`, accion === "guardar" ? "Notas guardadas" : accion === "no_contactar" ? "Listo: no le escribiremos más" : "Listo: sí se le puede escribir");
+  back(res, `/crm/clientes/${lead.id}`, accion === "guardar" ? "Cambios guardados" : accion === "no_contactar" ? "Listo: no le escribiremos más" : "Listo: sí se le puede escribir");
 });
 
 // ---------- Coches ----------
