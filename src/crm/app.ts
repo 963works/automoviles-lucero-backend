@@ -87,7 +87,7 @@ const TEMP: Record<string, { label: string; cls: string; help: string; letter: s
   COLD: { label: "Frío · solo está mirando", cls: "t-cold", help: "frío", letter: "F" },
 };
 // Agente por el que entró el cliente. El texto va en la tarjeta; la letra solo indica temperatura.
-const ORIGIN: Record<string, string> = { VOICE: "Voz", CHAT: "Chat", EMAIL: "Correo" };
+const ORIGIN: Record<string, string> = { VOICE: "Voz", CHAT: "Chat", EMAIL: "Correo", MANUAL: "Añadido a mano" };
 
 // Frase con lo que quiere el cliente, sacada de sus visitas y reservas reales.
 function situation(l: Lead): string {
@@ -813,9 +813,37 @@ crm.get("/clientes", (req, res) => {
   const pill = (k: string, label: string, cls = "") => `<a href="/crm/clientes?t=${k}" class="tag ${cls}" style="text-decoration:none;padding:10px 16px;${t === k ? "outline:4px solid #1d2b44" : ""}">${label}</a>`;
   const body = `<h1>Clientes</h1>
 <p class="sub">Miguel anota solo lo que quiere cada cliente. Tú solo lo lees y llamas si hace falta.</p>
+<div class="box"><h3 style="margin-top:0">Añadir un cliente a mano</h3>
+<form method="post" action="/crm/clientes">
+<div class="row"><div><label>Nombre</label><input name="nombre"></div>
+<div><label>Teléfono</label><input name="telefono" required></div></div>
+<label>Coche de interés</label><input name="vehicle_interest">
+<button class="btn ok" type="submit">Añadir cliente</button></form></div>
 <div class="legend">${pill("todos", "Todos")} ${pill("HOT", "Caliente", "t-hot")} ${pill("WARM", "Tibio", "t-warm")} ${pill("COLD", "Frío", "t-cold")}</div>
 ${leads.length === 0 ? `<div class="empty">Todavía no hay clientes en esta lista.</div>` : leads.map((l) => leadCard(l, me(res))).join("")}`;
   res.type("html").send(page("Clientes", me(res), body, msgOf(req)));
+});
+
+crm.post("/clientes", (req, res) => {
+  const telefono = String(req.body.telefono ?? "").trim();
+  if (!telefono) return back(res, "/crm/clientes", "Escribe el teléfono del cliente");
+  const leads = list<Lead>("leads");
+  if (leads.some((l) => l.phone === telefono)) return back(res, "/crm/clientes", "Ya existe un cliente con ese teléfono");
+  leads.push({
+    id: crypto.randomUUID(),
+    phone: telefono,
+    name: String(req.body.nombre ?? "").trim() || null,
+    notes: null,
+    channel: "MANUAL",
+    origin: "MANUAL",
+    vehicle_interest: String(req.body.vehicle_interest ?? "").trim() || null,
+    temperature: "COLD",
+    followup_count: 0,
+    do_not_contact: false,
+    created_at: now(),
+  });
+  save("leads", leads);
+  back(res, "/crm/clientes", "Cliente añadido");
 });
 
 crm.get("/clientes/:id", (req, res) => {
