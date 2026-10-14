@@ -8,6 +8,7 @@ import { createReservationPending, confirmReservation, cancelReservation } from 
 import { getOfficialStatus, setOfficialStatus, type OfficialVehicleStatus } from "../tools/vehicle-state.js";
 import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
+import { moveToTrash, listTrash, restoreFromTrash, purgeFromTrash } from "./trash.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "../tools/agent-toggle.js";
 import {
   googleStatus,
@@ -190,7 +191,7 @@ const MENU: [string, string][] = [
 function page(section: string, user: CrmUser, body: string, msg?: string): string {
   const menu: [string, string][] = [
     ...MENU,
-    ...(user.role === "admin" ? ([["/crm/integraciones", "Integraciones"], ["/crm/equipo", "Equipo"]] as [string, string][]) : []),
+    ...(user.role === "admin" ? ([["/crm/papelera", "Papelera"], ["/crm/integraciones", "Integraciones"], ["/crm/equipo", "Equipo"]] as [string, string][]) : []),
   ];
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(section)} · Lucero</title>
@@ -636,8 +637,9 @@ crm.post("/citas/:id", (req, res) => {
   if (accion === "eliminar") {
     if (me(res).role !== "admin") return back(res, "/crm/citas", "Solo el administrador puede eliminar visitas");
     if (a.status !== "cancelled") return back(res, "/crm/citas", "Solo se pueden eliminar visitas ya canceladas");
+    moveToTrash("appointments", a, `Visita: ${vehicleName(a.vehicle_id)} (${a.lead_phone ?? "sin contacto"})`, me(res).email);
     save("appointments", appts.filter((x) => x.id !== a.id));
-    return back(res, "/crm/citas", "Visita eliminada");
+    return back(res, "/crm/citas", "Visita movida a la papelera");
   }
   if (accion === "confirmar") a.status = "confirmed";
   else if (accion === "cancelar") a.status = "cancelled";
@@ -705,8 +707,9 @@ crm.post("/reservas/:id", (req, res) => {
     if (r.status !== "cancelled" && r.status !== "expired") {
       return back(res, "/crm/reservas", "Solo se pueden eliminar reservas ya canceladas o caducadas");
     }
+    moveToTrash("reservations", r, `Reserva: ${vehicleName(r.vehicle_id)} (${r.lead_phone ?? "sin contacto"})`, me(res).email);
     save("reservations", reservations.filter((x) => x.id !== r.id));
-    return back(res, "/crm/reservas", "Reserva eliminada");
+    return back(res, "/crm/reservas", "Reserva movida a la papelera");
   }
   back(res, "/crm/reservas", "No entendí esa acción");
 });
@@ -754,8 +757,9 @@ crm.post("/avisos/:id", (req, res) => {
   if (!h) return back(res, "/crm/pendientes", "No encuentro ese aviso");
   if (accion === "eliminar") {
     if (me(res).role !== "admin") return back(res, "/crm/pendientes", "Solo el administrador puede eliminar avisos");
+    moveToTrash("handoffs", h, `Aviso: ${h.reason ?? "sin motivo"} (${h.lead_name ?? h.lead_phone ?? "sin contacto"})`, me(res).email);
     save("handoffs", items.filter((x) => x.id !== h.id));
-    return back(res, "/crm/pendientes", "Aviso eliminado");
+    return back(res, "/crm/pendientes", "Aviso movido a la papelera");
   }
   h.status = "done";
   save("handoffs", items);
@@ -1109,13 +1113,56 @@ crm.post("/integraciones/google/borrar-prueba", async (_req, res) => {
 });
 
 // ---------- Avisos para llamar (cualquier usuario del CRM) ----------
+type AlertRow = { id: string; kind: string; lead_phone: string | null; name: string | null; reason: string };
 crm.post("/alertas/:id", (req, res) => {
   const accion = String(req.body.accion ?? "atendido");
   if (accion === "eliminar") {
     if (me(res).role !== "admin") return back(res, "/crm", "Solo el administrador puede eliminar alertas");
+    const alert = list<AlertRow>("alerts").find((a) => a.id === req.params.id);
+    if (!alert) return back(res, "/crm", "No encuentro esa alerta");
     if (!deleteAlert(req.params.id)) return back(res, "/crm", "No encuentro esa alerta");
-    return back(res, "/crm", "Alerta eliminada");
+    moveToTrash("alerts", alert, `Alerta: ${alert.reason} (${alert.name ?? alert.lead_phone ?? "sin contacto"})`, me(res).email);
+    return back(res, "/crm", "Alerta movida a la papelera");
   }
   if (!markAlertDone(req.params.id)) return back(res, "/crm", "No encuentro ese aviso");
   back(res, "/crm", "Aviso marcado como atendido");
+});
+
+// ---------- Papelera (solo administrador) ----------
+const TRASH_LABELS: Record<string, string> = {
+  reservations: "Reserva",
+  appointments: "Visita",
+  handoffs: "Aviso",
+  alerts: "Alerta",
+};
+
+crm.get("/papelera", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm", "Esta sección es solo para el administrador");
+  const items = listTrash();
+  const body = `<h1>Papelera</h1>
+<p class="sub">Aquí quedan las reservas, visitas, avisos y alertas que se eliminaron -- nada se borra para siempre hasta que lo confirmes aquí.</p>
+${items.length === 0 ? `<div class="empty">La papelera está vacía.</div>` : items.map((t) => `<div class="card"><div class="info">
+<h3>${esc(t.label)}</h3>
+<p><span class="tag">${esc(TRASH_LABELS[t.collection] ?? t.collection)}</span></p>
+<p>Eliminado por ${esc(t.deleted_by)} el ${esc(fmtDate(t.deleted_at))}</p>
+<form method="post" action="/crm/papelera/${esc(t.id)}">
+<button class="btn ok" type="submit" name="accion" value="restaurar">Restaurar</button>
+<button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar esto para siempre? Ya no se podrá recuperar.')">Eliminar definitivamente</button>
+</form>
+</div></div>`).join("")}`;
+  res.type("html").send(page("Papelera", me(res), body, msgOf(req)));
+});
+
+crm.post("/papelera/:id", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm", "Solo el administrador puede gestionar la papelera");
+  const accion = String(req.body.accion ?? "");
+  if (accion === "restaurar") {
+    if (!restoreFromTrash(req.params.id)) return back(res, "/crm/papelera", "No encuentro eso en la papelera");
+    return back(res, "/crm/papelera", "Restaurado");
+  }
+  if (accion === "eliminar") {
+    if (!purgeFromTrash(req.params.id)) return back(res, "/crm/papelera", "No encuentro eso en la papelera");
+    return back(res, "/crm/papelera", "Eliminado para siempre");
+  }
+  back(res, "/crm/papelera", "No entendí esa acción");
 });
