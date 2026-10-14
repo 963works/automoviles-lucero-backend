@@ -1,14 +1,15 @@
 // Semilla de inventario REAL -- exportación oficial de Coches.net PRO
-// (fuente del propio negocio, Automóviles Lucero), importada 01/10/2026.
-// Sustituye por completo el catálogo anterior basado en observación pública
-// (Secciones 19-21 del encargo) -- esta es la fuente intermedia real que
-// permite la Sección 49 (INVENTORY_PROVIDER) mientras no haya integración
-// automática por API/feed en vivo con Coches.net. category viene directo del
-// campo real "carroceria" del feed, no inventado -- valores reales observados:
-// ['4x4', 'Berlina', 'Familiar', 'Industriales', 'Monovolumen'].
+// (fuente del propio negocio, Automóviles Lucero), importada 01/10/2026,
+// refrescada 14/10/2026 con el export "hoy" (reemplaza por completo la lista
+// anterior -- los vehículos que ya no aparecen en el export se entienden
+// vendidos/retirados; no se inventan ni se conservan a mano).
+// category viene directo del campo real "carroceria" del feed, no inventado --
+// valores reales observados: ['4x4', 'Berlina', 'Familiar', 'Industriales',
+// 'Monovolumen'].
 //
 // Para regenerar este archivo a partir de un nuevo export XML de Coches.net
-// PRO, ver scripts/import-cochesnet.mjs.
+// PRO: pegar el XML y pedir a Claude que repita el proceso de refresco de
+// inventario (no existe de momento un script automatizado de import).
 
 export type Vehicle = {
   id: string;
@@ -35,7 +36,7 @@ export type Vehicle = {
 };
 
 const SOURCE = "Coches.net PRO (exportación oficial del negocio, feed XML)";
-const IMPORTED = "2026-10-01";
+const IMPORTED = "2026-10-14";
 
 export const vehiclesSeed: Vehicle[] = [
   {
@@ -93,15 +94,6 @@ export const vehiclesSeed: Vehicle[] = [
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
-    id: "lucero-cn20687766", ref_cochesnet: null, ref_wallapop: null,
-    category: "Monovolumen",
-    make: "Ford", model: "SMAX", version: "2.0 TDCi Panther 140kW STLine Pow",
-    year: 2021, year_note: null, km: 320000, fuel: "Diesel", power_cv: 190, price_eur: 11900,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
     id: "lucero-cn20688275", ref_cochesnet: null, ref_wallapop: null,
     category: "4x4",
     make: "Volkswagen", model: "Tiguan", version: "2.0 TDI 4M 140cv DSG RLine",
@@ -126,15 +118,6 @@ export const vehiclesSeed: Vehicle[] = [
     year: 2007, year_note: null, km: 294000, fuel: "Diesel", power_cv: 140, price_eur: 3990,
     stock_status: "available", validation_status: "owner_confirmed",
     known_defects: null, warranty_note: null, conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
-    id: "lucero-cn20693416", ref_cochesnet: null, ref_wallapop: null,
-    category: "Industriales",
-    make: "Peugeot", model: "Expert", version: "Furgon Asphalt 1.5 BlueHDi 120 Standard",
-    year: 2020, year_note: null, km: 240000, fuel: "Diesel", power_cv: 120, price_eur: 8990,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
@@ -192,39 +175,12 @@ export const vehiclesSeed: Vehicle[] = [
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
-    id: "lucero-cn20783018", ref_cochesnet: null, ref_wallapop: null,
-    category: "Industriales",
-    make: "Fiat", model: "Doblo", version: "Panorama Lounge 1.6 Multijet 105cv E5",
-    year: 2016, year_note: null, km: 290000, fuel: "Diesel", power_cv: 105, price_eur: 5990,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
-    id: "lucero-cn20783068", ref_cochesnet: null, ref_wallapop: null,
-    category: "Berlina",
-    make: "Volkswagen", model: "Golf", version: "VI 2.0 TDI 140cv DPF Sport",
-    year: 2009, year_note: null, km: 350000, fuel: "Diesel", power_cv: 140, price_eur: 3900,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
     id: "lucero-cn20785249", ref_cochesnet: null, ref_wallapop: null,
     category: "Industriales",
     make: "Fiat", model: "Doblo", version: "Panorama Dynamic 1.6 Multijet 90cv",
     year: 2012, year_note: null, km: 270000, fuel: "Diesel", power_cv: 90, price_eur: 1990,
-    stock_status: "not_roadworthy", validation_status: "owner_confirmed",
-    known_defects: "Avería de motor: el motor gira pero no arranca. Se desconoce la causa (según el anuncio, 'ideal para mecánicos').", warranty_note: null, conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
-    id: "lucero-cn20798257", ref_cochesnet: null, ref_wallapop: null,
-    category: "Monovolumen",
-    make: "Renault", model: "Grand Scenic", version: "Dynamique dCi 110 EDC 7p 2012",
-    year: 2013, year_note: null, km: 320000, fuel: "Diesel", power_cv: 110, price_eur: 3490,
     stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    known_defects: null, warranty_note: null, conflicts: [],
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
@@ -232,15 +188,6 @@ export const vehiclesSeed: Vehicle[] = [
     category: "Familiar",
     make: "Peugeot", model: "308", version: "SW Allure BlueHDI 130 SS EAT8",
     year: 2023, year_note: null, km: 200000, fuel: "Diesel", power_cv: 130, price_eur: 8990,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
-    id: "lucero-cn20805935", ref_cochesnet: null, ref_wallapop: null,
-    category: "Industriales",
-    make: "Ford", model: "Transit", version: "350 96kW L3H2 Van DC Trend FWD",
-    year: 2024, year_note: null, km: 237000, fuel: "Diesel", power_cv: 130, price_eur: 13990,
     stock_status: "available", validation_status: "owner_confirmed",
     known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
     source: SOURCE, source_updated_at: IMPORTED,
@@ -255,37 +202,10 @@ export const vehiclesSeed: Vehicle[] = [
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
-    id: "lucero-cn20805977", ref_cochesnet: null, ref_wallapop: null,
-    category: "Berlina",
-    make: "BMW", model: "Serie 1", version: "120d",
-    year: 2006, year_note: null, km: 260000, fuel: "Diesel", power_cv: 163, price_eur: 3900,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
     id: "lucero-cn20805996", ref_cochesnet: null, ref_wallapop: null,
     category: "4x4",
     make: "Audi", model: "Q3", version: "2.0 TDI 177cv quattro S tronic Advance",
     year: 2012, year_note: null, km: 290000, fuel: "Diesel", power_cv: 177, price_eur: 8490,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
-    id: "lucero-cn20837795", ref_cochesnet: null, ref_wallapop: null,
-    category: "Industriales",
-    make: "Fiat", model: "Ducato", version: "Furgon Maxi 35 L4H2 Multijet 103 kW",
-    year: 2023, year_note: null, km: 198000, fuel: "Diesel", power_cv: 140, price_eur: 14990,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
-    id: "lucero-cn20837825", ref_cochesnet: null, ref_wallapop: null,
-    category: "Monovolumen",
-    make: "Seat", model: "Alhambra", version: "2.0 TDI 110kW 150CV DSG SS St Ad Trav",
-    year: 2018, year_note: null, km: 180000, fuel: "Diesel", power_cv: 150, price_eur: 13990,
     stock_status: "available", validation_status: "owner_confirmed",
     known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
     source: SOURCE, source_updated_at: IMPORTED,
@@ -354,15 +274,6 @@ export const vehiclesSeed: Vehicle[] = [
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
-    id: "lucero-cn20838262", ref_cochesnet: null, ref_wallapop: null,
-    category: "Berlina",
-    make: "BMW", model: "Serie 1", version: "118d M Sport Edition",
-    year: 2013, year_note: null, km: 285000, fuel: "Diesel", power_cv: 143, price_eur: 5990,
-    stock_status: "available", validation_status: "owner_confirmed",
-    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
-    source: SOURCE, source_updated_at: IMPORTED,
-  },
-  {
     id: "lucero-cn20838343", ref_cochesnet: null, ref_wallapop: null,
     category: "Monovolumen",
     make: "Mercedes-Benz", model: "Clase B", version: "B 200 d Urban",
@@ -372,19 +283,73 @@ export const vehiclesSeed: Vehicle[] = [
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
-    id: "lucero-cn20838383", ref_cochesnet: null, ref_wallapop: null,
+    id: "lucero-cn20866933", ref_cochesnet: null, ref_wallapop: null,
     category: "Monovolumen",
-    make: "Ford", model: "SMAX", version: "2.0 TDCi Panther 140kW STLine AWD Pow",
-    year: 2021, year_note: null, km: 320000, fuel: "Diesel", power_cv: 190, price_eur: 10990,
+    make: "Nissan", model: "QASHQAI2", version: "1.5 dCi TEKNA SPORT 4x2 17",
+    year: 2010, year_note: null, km: 200000, fuel: "Diesel", power_cv: 106, price_eur: 5490,
     stock_status: "available", validation_status: "owner_confirmed",
     known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
     source: SOURCE, source_updated_at: IMPORTED,
   },
   {
-    id: "lucero-cn20866933", ref_cochesnet: null, ref_wallapop: null,
+    id: "lucero-cn20895358", ref_cochesnet: null, ref_wallapop: null,
+    category: "Berlina",
+    make: "MINI", model: "MINI", version: "Cooper",
+    year: 2012, year_note: null, km: 200000, fuel: "Gasolina", power_cv: 122, price_eur: 4990,
+    stock_status: "available", validation_status: "owner_confirmed",
+    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    source: SOURCE, source_updated_at: IMPORTED,
+  },
+  {
+    id: "lucero-cn20895414", ref_cochesnet: null, ref_wallapop: null,
     category: "Monovolumen",
-    make: "Nissan", model: "Qashqai+2", version: "1.5 dCi TEKNA SPORT 4x2 17",
-    year: 2010, year_note: null, km: 200000, fuel: "Diesel", power_cv: 106, price_eur: 5490,
+    make: "Ford", model: "Grand Tourneo Connect", version: "1.5 TDCi 88kW 120CV Titanium",
+    year: 2018, year_note: null, km: 270000, fuel: "Diesel", power_cv: 120, price_eur: 9490,
+    stock_status: "available", validation_status: "owner_confirmed",
+    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    source: SOURCE, source_updated_at: IMPORTED,
+  },
+  {
+    id: "lucero-cn20926660", ref_cochesnet: null, ref_wallapop: null,
+    category: "Berlina",
+    make: "Opel", model: "Astra", version: "1.6 CDTi SS 100kW 136CV Selective Pro",
+    year: 2018, year_note: null, km: 232000, fuel: "Diesel", power_cv: 136, price_eur: 6900,
+    stock_status: "available", validation_status: "owner_confirmed",
+    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    source: SOURCE, source_updated_at: IMPORTED,
+  },
+  {
+    id: "lucero-cn20926827", ref_cochesnet: null, ref_wallapop: null,
+    category: "4x4",
+    make: "Toyota", model: "Rav4", version: "2.5l hybrid 2WD Executive",
+    year: 2018, year_note: null, km: 234000, fuel: "Otros", power_cv: 197, price_eur: 14990,
+    stock_status: "available", validation_status: "owner_confirmed",
+    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    source: SOURCE, source_updated_at: IMPORTED,
+  },
+  {
+    id: "lucero-cn20926900", ref_cochesnet: null, ref_wallapop: null,
+    category: "Monovolumen",
+    make: "Citroen", model: "Grand C4 Picasso", version: "BlueHDi 110KW 150CV Shine",
+    year: 2016, year_note: null, km: 265000, fuel: "Diesel", power_cv: 150, price_eur: 6990,
+    stock_status: "available", validation_status: "owner_confirmed",
+    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    source: SOURCE, source_updated_at: IMPORTED,
+  },
+  {
+    id: "lucero-cn20926917", ref_cochesnet: null, ref_wallapop: null,
+    category: "Berlina",
+    make: "Seat", model: "Ibiza", version: "1.4 TDI 80cv Hit",
+    year: 2008, year_note: null, km: 200000, fuel: "Diesel", power_cv: 80, price_eur: 2490,
+    stock_status: "available", validation_status: "owner_confirmed",
+    known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
+    source: SOURCE, source_updated_at: IMPORTED,
+  },
+  {
+    id: "lucero-cn20951834", ref_cochesnet: null, ref_wallapop: null,
+    category: "Industriales",
+    make: "Mercedes-Benz", model: "Citan", version: "108 CDI Furgon Largo",
+    year: 2019, year_note: null, km: 248000, fuel: "Diesel", power_cv: 80, price_eur: 6990,
     stock_status: "available", validation_status: "owner_confirmed",
     known_defects: null, warranty_note: "12 meses (1 año)", conflicts: [],
     source: SOURCE, source_updated_at: IMPORTED,

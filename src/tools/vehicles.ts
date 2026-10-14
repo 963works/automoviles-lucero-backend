@@ -65,9 +65,6 @@ export function searchVehicles(args: {
   const start = (page - 1) * PAGE_SIZE;
   const pageResults = results.slice(start, start + PAGE_SIZE);
 
-  // Ninguna unidad tiene stock_status "available" todavía (Sección 6: por
-  // defecto "unknown" hasta que el negocio confirme). Esto es intencional,
-  // no un error -- el conteo de "disponibles confirmados" es honesto: 0.
   const confirmedAvailable = results.filter((v) => v.stock_status === "available").length;
 
   const pageResultsWithStatus = pageResults.map((v) => ({ ...v, official_status: getOfficialStatus(v.id) }));
@@ -83,8 +80,8 @@ export function searchVehicles(args: {
       total_pages: Math.max(1, Math.ceil(results.length / PAGE_SIZE)),
       results: pageResultsWithStatus,
     },
-    source: "Coches.net PRO (exportación oficial del negocio, feed XML) -- importado 01/10/2026. NO es un feed en vivo todavía.",
-    source_updated_at: "2026-10-01",
+    source: "Coches.net PRO (exportación oficial del negocio, feed XML) -- refrescado 14/10/2026. NO es un feed en vivo todavía.",
+    source_updated_at: "2026-10-14",
     conflicts: pageResults.flatMap((v) => (v.conflicts.length ? [`${v.make} ${v.model} (${v.id}): ${v.conflicts.join(" / ")}`] : [])),
   });
 }
@@ -168,7 +165,7 @@ export function findSimilarVehicles(args: { vehicle_id: string }) {
   return envelope({
     status: candidates.length === 0 ? "not_found" : "ok",
     data: { base_vehicle_id: base.id, results: candidates },
-    source: "Coches.net PRO (exportación oficial del negocio, feed XML) -- importado 01/10/2026. NO es un feed en vivo todavía.",
+    source: "Coches.net PRO (exportación oficial del negocio, feed XML) -- refrescado 14/10/2026. NO es un feed en vivo todavía.",
     conflicts: candidates.flatMap((v) => (v.conflicts.length ? [`${v.make} ${v.model} (${v.id}): ${v.conflicts.join(" / ")}`] : [])),
   });
 }

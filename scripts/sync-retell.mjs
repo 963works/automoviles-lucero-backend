@@ -146,14 +146,22 @@ function tool(name, description, properties, required = []) {
 // (Sección 26: exigen validación humana, no son tool del agente),
 // sync_inventory (Sección 46: automatización, no una acción de conversación),
 // send_vehicle_link (13/10/2026: Miguel nunca ofrece ni envía enlaces -- no
-// hay feed en vivo de coches.net que respalde un enlace fiable), y
-// search_vehicle/get_vehicle/get_vehicle_status/find_similar_vehicles
-// (13/10/2026, decisión DEFINITIVA del negocio: Miguel no consulta
-// inventario de ningún tipo -- ni coches.net, ni Wallapop, ni Dealcar).
+// hay feed en vivo de coches.net que respalde un enlace fiable).
+// search_vehicles/get_vehicle/get_vehicle_status/find_similar_vehicles SÍ
+// están activas (14/10/2026, reversión explícita de la decisión del
+// 13/10/2026: el negocio ahora quiere que Miguel dé datos reales del
+// inventario -- ver CONFIANZA REAL en prompt-core.md). Nunca devuelven
+// matrícula (el campo ni siquiera existe ya en Vehicle).
 // transfer_call SÍ está activo (ver transferTools en syncVoice) -- solo en
 // voz, con Ramón y José ya confirmados.
 const AGENT_TOOLS = [
   tool("get_business_info", "Devuelve políticas confirmadas del negocio (horarios, financiación, garantía, reserva, ubicación, WhatsApp).", {}, []),
+  tool("search_vehicles", "Busca vehículos reales del inventario actual por texto libre, marca, modelo, categoría/carrocería, precio, km o combustible. Usa esto siempre que el cliente pregunte por un coche concreto o un tipo de coche -- nunca inventes datos de vehículos sin consultarlo primero.", {
+    query: S, make: S, model: S, category: S, max_price_eur: N, min_price_eur: N, max_km: N, fuel: S, page: N,
+  }),
+  tool("get_vehicle", "Devuelve los datos reales de un vehículo concreto del inventario por su id (precio, km, año, combustible, potencia, garantía, estado).", { id: S }, ["id"]),
+  tool("get_vehicle_status", "Comprueba el estado interno real de un vehículo (disponible/reservado/vendido según nuestras propias reservas) y sus defectos conocidos, si los hay. No es el estado en vivo del portal.", { id: S }, ["id"]),
+  tool("find_similar_vehicles", "Busca alternativas reales del inventario con precio y km similares al vehículo indicado, cuando ese vehículo no encaja o ya no está disponible.", { vehicle_id: S }, ["vehicle_id"]),
   tool("create_lead", "Crea el registro del interesado si no existe (teléfono, nombre, intención, vehículo de interés, presupuesto, momento de compra).", {
     phone: S, name: S, intent: S, notes: S, channel: S, vehicle_interest: S, budget: S, purchase_timing: S,
   }),
