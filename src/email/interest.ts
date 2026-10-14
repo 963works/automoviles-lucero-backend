@@ -16,8 +16,23 @@ const INTERESTED = [
   /\b(reservar|reserva|apartar|se\s+lo\s+llevo|me lo llevo)\b/i,
   /\b(tasar|tasaci[oó]n|valorar|vender mi|quiero vender|compr\w*|busco)\b/i,
   /\b(disponible|kil[oó]metros|kms?|garant[ií]a|itv|matr[ií]cula|motor|diesel|gasolina|h[ií]brido|el[eé]ctrico)\b/i,
-  /\b(golf|polo|astra|corsa|clio|megane|kuga|focus|qashqai|tiguan|x[1-7]|serie [1-7]|a[1-8]|c[1-5]|ibiza|leon|octavia|fiesta|tucson|sportage|berlingo|doblo|transit|jumper|ducato|vito|sprinter)\b/i,
+  /\b(golf|polo|astra|corsa|clio|megane|kuga|focus|qashqai|tiguan|x[1-7]|serie [1-7]|a[1-8]|c[1-5]|ibiza|leon|octavia|fiesta|tucson|sportage|berlingo|doblo|transit|jumper|ducato|vito|sprinter|passat|scenic|sc[eé]nic|touran|sharan|caddy|t-roc|t-cross|arona|ateca|kadjar|captur|duster|sandero|yaris|corolla|rav4|c-hr|juke|micra|mokka|crossland|grandland|peugeot|citro[eë]n|seat|renault|volkswagen|skoda|hyundai|kia|toyota|nissan|opel|dacia|fiat)\b/i,
   /\b(car|cars|van|vans|price|how much|appointment|finance|financing|test drive|buy|reserve|sell my car)\b/i,
+];
+
+// Plantillas propias de los portales (encargo real, 14/10/2026, caso real:
+// un correo de "nuevo contacto" con nombre/teléfono/modelo NO llevaba
+// ninguna palabra de la lista de arriba -- "Passat" no estaba en la lista
+// de modelos, y aun así es un lead real de verdad, con teléfono incluido).
+// Si el propio portal generó esta notificación, es por definición un
+// interés comercial real -- no hace falta que coincida además con una
+// palabra concreta.
+const PORTAL_NOTIFICATION_TEMPLATE = [
+  /\btienes un nuevo contacto\b/i,
+  /\bnuevo contacto\b/i,
+  /se ha interesado por/i,
+  /contactado desde/i,
+  /estos son sus datos de contacto/i,
 ];
 
 // Documentación sensible (encargo real, 14/10/2026): nunca se contesta
@@ -35,10 +50,14 @@ const SENSITIVE_DOCS = [
 // para dejarlo registrado en el CRM, y sobre todo para distinguir el caso
 // en que el propio portal exige responder desde su chat/app -- contestar
 // por correo a esa notificación no le llega de verdad al comprador.
+// Orden importante: si el cuerpo menciona milanuncios/wallapop se etiqueta
+// así aunque el correo llegue técnicamente desde el dominio de coches.net
+// (comparten el mismo sistema de notificaciones) -- lo que importa al
+// equipo es el anuncio real de origen, no quién reenvió el aviso.
 const PORTAL_SENDERS: { match: RegExp; name: string }[] = [
+  { match: /milanuncios/i, name: "Milanuncios" },
+  { match: /wallapop/i, name: "Wallapop" },
   { match: /coches\.net/i, name: "Coches.net" },
-  { match: /milanuncios\.com/i, name: "Milanuncios" },
-  { match: /wallapop\.com/i, name: "Wallapop" },
 ];
 const PORTAL_MANAGE_ELSEWHERE = [
   /gestionar\s+(el\s+)?chat/i,
@@ -74,6 +93,9 @@ export function decideInterest(input: { subject: string; text: string; hasPriorT
   }
   if (INTERESTED.some((r) => r.test(body))) {
     return { interested: true, reason: "pregunta_sobre_vehiculos_o_servicios" };
+  }
+  if (PORTAL_NOTIFICATION_TEMPLATE.some((r) => r.test(body))) {
+    return { interested: true, reason: "notificacion_real_de_portal" };
   }
   // 13/10/2026, decisión del negocio: el agente de correo solo responde
   // automáticamente consultas de ventas/vehículos, reservas, citas/visitas
