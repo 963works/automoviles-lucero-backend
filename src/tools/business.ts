@@ -1,6 +1,6 @@
 import { businessInfo } from "../data/business-info.js";
 import { envelope } from "../response.js";
-import { isWithinBusinessHoursNow } from "./appointments.js";
+import { isWithinBusinessHoursNow, todayInfo } from "./appointments.js";
 
 export function getBusinessInfo() {
   return envelope({
@@ -11,6 +11,10 @@ export function getBusinessInfo() {
       // úsalo para decidir si intentar una transferencia en vivo o no
       // (Sección 5 del encargo de conexión telefónica, 13/10/2026).
       is_business_hours_now: isWithinBusinessHoursNow(),
+      // Fecha y día de la semana reales de hoy (Europe/Madrid) -- añadido
+      // 14/10/2026 tras un fallo real: sin esto, el agente se inventaba qué
+      // día era. Nunca asumas el día, usa siempre este dato.
+      ...todayInfo(),
     },
     source: "Especificación maestra de producción confirmada por el responsable del negocio, 29/09/2026. Campos individuales llevan su propio validation_status.",
     source_updated_at: "2026-09-29",

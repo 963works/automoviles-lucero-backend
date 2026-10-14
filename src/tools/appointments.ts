@@ -152,6 +152,24 @@ export function isWithinBusinessHoursNow(): boolean {
   return withinWeekdayWindow(minutes);
 }
 
+// FALLO REAL detectado (14/10/2026): sin esto, Miguel no tenía ninguna forma
+// real de saber qué día era hoy -- ni la fecha ni el día de la semana --
+// así que cuando el prompt le pedía "comprueba qué día es hoy" antes de
+// decidir si hoy es fin de semana/festivo, se lo inventaba (llegó a decir
+// que un miércoles real era domingo). Nunca debe adivinarlo: esto se calcula
+// aquí con la fecha real de Madrid y se expone en get_business_info.
+const WEEKDAY_NAMES_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+export function todayInfo(): { date: string; weekday: string; is_non_booking_day_today: boolean } {
+  const dateStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+  const weekdayIndex = new Date(`${dateStr}T12:00:00`).getDay();
+  return {
+    date: dateStr,
+    weekday: WEEKDAY_NAMES_ES[weekdayIndex],
+    is_non_booking_day_today: isNonBookingDay(dateStr),
+  };
+}
+
 // Madrid, UTC+1/UTC+2 según la época del año. El offset se calcula con Intl
 // para que el cambio de horario no desplace las citas una hora.
 function madridOffsetMinutes(at: Date): number {
