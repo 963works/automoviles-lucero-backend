@@ -323,7 +323,19 @@ async function syncVoice(state) {
     // backend real (01/10/2026). Se fija aquí para que no vuelva a quedar
     // obsoleto en publicaciones futuras.
     agent_name: "Agente Miguel - Automóviles Lucero",
-    pronunciation_dictionary: [{ word: "Carabanchel", alphabet: "ipa", phoneme: "kaɾaβanˈtʃel" }],
+    // A petición real (16/10/2026, "que diga bien los vehículos"): marcas
+    // reales del inventario con origen extranjero que un TTS genérico suele
+    // leer mal en español (letra por letra o con la fonética del idioma
+    // original) -- igual que Carabanchel, sin garantía real sin oírlo en
+    // una llamada de verdad.
+    pronunciation_dictionary: [
+      { word: "Carabanchel", alphabet: "ipa", phoneme: "kaɾaβanˈtʃel" },
+      { word: "Peugeot", alphabet: "ipa", phoneme: "peuˈʝo" },
+      { word: "Porsche", alphabet: "ipa", phoneme: "ˈpoɾtʃe" },
+      { word: "Citroen", alphabet: "ipa", phoneme: "θitɾoˈen" },
+      { word: "quattro", alphabet: "ipa", phoneme: "ˈkwatɾo" },
+      { word: "Rav4", alphabet: "ipa", phoneme: "ɾaβˈkwatɾo" },
+    ],
     webhook_url: WEBHOOK_URL,
     post_call_analysis_data: POST_CALL_ANALYSIS_DATA,
     // 13/10/2026: se probó un retraso fijo (begin_message_delay_ms) para que
