@@ -21,7 +21,13 @@ type ConversationRecord = { id: string; messages: ChatMessage[]; updated_at: str
 const MODEL = process.env.LUCERO_CHAT_MODEL ?? "gpt-4.1-mini";
 const BASE_URL = process.env.LLM_BASE_URL ?? "https://api.openai.com/v1";
 const MAX_TURNS_KEPT = 20;
-const MAX_TOOL_ROUNDS = 6;
+// Estructura por canal (15/10/2026, a petición real: "mismo cerebro, pero
+// diferente para cada agente"): el correo es de un solo disparo -- nadie
+// espera en línea, así que puede permitirse más rondas de herramientas para
+// verificar bien antes de contestar una única vez. Chat/WhatsApp son
+// conversación en vivo -- el cliente sigue ahí, así que no hace falta tanto
+// margen (y responder antes es mejor que tardar de más).
+const MAX_TOOL_ROUNDS_BY_CHANNEL: Record<Channel, number> = { EMAIL: 10, CHAT: 6, WHATSAPP: 6 };
 const FALLBACK_REPLY = "Disculpa, ahora mismo no puedo responderte bien. Te paso con el equipo para que te atiendan en persona.";
 
 export class LlmNotConfigured extends Error {
@@ -122,9 +128,10 @@ export async function handleChatMessage(
 
   let toolRuns = 0;
   let reply: string | null = null;
+  const maxToolRounds = MAX_TOOL_ROUNDS_BY_CHANNEL[channel];
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS && reply === null; round++) {
-    const isLastRound = round === MAX_TOOL_ROUNDS - 1;
+  for (let round = 0; round < maxToolRounds && reply === null; round++) {
+    const isLastRound = round === maxToolRounds - 1;
     const callInput = isLastRound
       ? [
           ...messages,
