@@ -107,10 +107,18 @@ export type PortalInfo = { portal: string | null; mustManageOnPortal: boolean };
 export function detectPortal(input: { from: string; subject: string; text: string }): PortalInfo {
   const hay = `${input.from}\n${input.subject}\n${input.text}`;
   const found = PORTAL_SENDERS.find((p) => p.match.test(hay));
-  return {
-    portal: found?.name ?? null,
-    mustManageOnPortal: PORTAL_MANAGE_ELSEWHERE.some((r) => r.test(input.text)),
-  };
+  // FALLO REAL grave detectado (15/10/2026, confirmado con el propio rebote de
+  // Wallapop): cada respuesta por correo a una notificación de Wallapop volvía
+  // automáticamente con "Este correo electrónico no está habilitado como canal
+  // de Atención al Cliente" -- ninguna de las respuestas de hoy llegó a nadie,
+  // y encima el contenido salía mal porque el cuerpo del aviso de Wallapop
+  // siempre llega vacío (sin texto real del cliente), así que el agente
+  // adivinaba a partir solo del asunto -- en un caso llegó a preguntar "¿quieres
+  // vendernos tu vehículo?" sobre un aviso que en realidad era de un comprador
+  // interesado en NUESTRO anuncio. Wallapop exige gestionarlo desde su propia
+  // app/chat, siempre, sin excepción -- nunca se intenta responder por correo.
+  const mustManageOnPortal = found?.name === "Wallapop" || PORTAL_MANAGE_ELSEWHERE.some((r) => r.test(input.text));
+  return { portal: found?.name ?? null, mustManageOnPortal };
 }
 
 export type InterestDecision = { interested: boolean; reason: string };

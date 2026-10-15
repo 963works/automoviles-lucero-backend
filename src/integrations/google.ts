@@ -254,12 +254,35 @@ function plainText(payload: any): string {
   return "";
 }
 
+// FALLO REAL grave detectado (15/10/2026, confirmado en producción): el
+// regex anterior (^(?:"?([^"<]*?)"?\s*)?<?([^<>\s]+@[^<>\s]+)>?$) recortaba
+// la PRIMERA LETRA de la dirección cuando el remitente llegaba como
+// dirección "pelada", sin nombre ni "<>" (p. ej. "no-reply@coches.net" ->
+// "o-reply@coches.net", "correo@pro.coches.net" -> "orreo@pro.coches.net").
+// Esto no es solo un dato mal mostrado: al perder la "n" de "no-reply",
+// dejaba de coincidir con el filtro /no-?reply/i que detecta remitentes
+// automáticos -- así que un no-reply real se trataba como cliente de
+// verdad y recibía respuestas reales con datos de coches, una y otra vez
+// en el día. Parser nuevo, sin regex frágil: si hay "<email>", el nombre es
+// lo de antes y el email lo de dentro; si no hay "<>", la cadena entera ES
+// la dirección (caso más simple y común para remitentes sin nombre).
+function parseFromHeader(fromRaw: string): { email: string; name: string } {
+  const trimmed = fromRaw.trim();
+  const angle = /<([^<>]+)>\s*$/.exec(trimmed);
+  if (angle) {
+    const email = angle[1].trim();
+    const name = trimmed.slice(0, angle.index).trim().replace(/^"(.*)"$/, "$1").trim();
+    return { email: email.toLowerCase(), name };
+  }
+  return { email: trimmed.toLowerCase(), name: "" };
+}
+
 export async function gmailGet(id: string): Promise<GmailMessage> {
   const m = (await googleFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`)) as any;
   const headers: { name: string; value: string }[] = m.payload?.headers ?? [];
   const fromRaw = header(headers, "From");
-  const match = /^(?:"?([^"<]*?)"?\s*)?<?([^<>\s]+@[^<>\s]+)>?$/.exec(fromRaw.trim());
-  const from = (match?.[2] ?? fromRaw).toLowerCase();
+  const parsedFrom = parseFromHeader(fromRaw);
+  const from = parsedFrom.email;
   const automated =
     /no-?reply|mailer-daemon|postmaster|do-?not-?reply/i.test(from) ||
     Boolean(header(headers, "List-Unsubscribe")) ||
@@ -268,7 +291,7 @@ export async function gmailGet(id: string): Promise<GmailMessage> {
     id: m.id,
     threadId: m.threadId,
     from,
-    fromName: match?.[1]?.trim() ?? "",
+    fromName: parsedFrom.name,
     subject: header(headers, "Subject"),
     messageId: header(headers, "Message-ID"),
     automated,
