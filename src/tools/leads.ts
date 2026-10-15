@@ -38,6 +38,29 @@ function readLeads() {
   return readCollection<Lead>("leads", []);
 }
 
+// Especificación formal del agente de chat (16/10/2026, sección CRM:
+// "comprueba si el lead ya existe antes de crear otro"): FALLO REAL
+// confirmado en los datos de producción -- el mismo cliente real del
+// Volkswagen Golf quedó duplicado en dos fichas, "+34699696463" (desde voz)
+// y "699696463" (el mismo número, pero tecleado sin el prefijo del país) --
+// porque la comparación era de texto exacto, sin normalizar. Voz suele dar
+// "+34XXXXXXXXX", WhatsApp "34XXXXXXXXX" (sin +), y un número tecleado a
+// mano puede venir sin prefijo de país -- las tres formas son el mismo
+// teléfono real. No se toca nada que no sea un teléfono de verdad (un email
+// usado como clave de contacto, o un identificador largo como el PSID de
+// Facebook, se dejan exactamente igual).
+function normalizePhone(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.includes("@")) return trimmed.toLowerCase();
+  const digits = trimmed.replace(/[^\d+]/g, "");
+  const hadPlus = digits.startsWith("+");
+  const bare = digits.replace(/^\+/, "").replace(/^0+/, "");
+  if (bare.length > 11 || bare.length < 7) return trimmed;
+  if (bare.startsWith("34") && bare.length === 11) return "+" + bare;
+  if (bare.length === 9) return "+34" + bare;
+  return hadPlus ? "+" + bare : trimmed;
+}
+
 export function upsertLead(args: {
   phone?: string;
   email?: string;
@@ -50,11 +73,12 @@ export function upsertLead(args: {
   purchase_timing?: string;
 }) {
   const leads = readLeads();
+  const normalizedPhone = args.phone ? normalizePhone(args.phone) : undefined;
   // Teléfono es la clave principal (lo usan voz/chat, que siempre lo tienen).
   // Un lead que llega por email puede no dar teléfono -- en ese caso se
   // identifica por email para no duplicarlo en cada correo nuevo del mismo remitente.
-  let lead = args.phone
-    ? leads.find((l) => l.phone === args.phone)
+  let lead = normalizedPhone
+    ? leads.find((l) => l.phone === normalizedPhone)
     : args.email
       ? leads.find((l) => l.email === args.email)
       : undefined;
@@ -62,7 +86,7 @@ export function upsertLead(args: {
   if (lead) {
     lead.name = args.name ?? lead.name;
     lead.email = args.email ?? lead.email;
-    lead.phone = args.phone ?? lead.phone;
+    lead.phone = normalizedPhone ?? lead.phone;
     lead.intent = args.intent ?? lead.intent;
     lead.notes = args.notes ? `${lead.notes ? lead.notes + " | " : ""}${args.notes}` : lead.notes;
     lead.channel = args.channel ?? lead.channel;
@@ -76,7 +100,7 @@ export function upsertLead(args: {
   } else {
     lead = {
       id: crypto.randomUUID(),
-      phone: args.phone ?? null,
+      phone: normalizedPhone ?? null,
       email: args.email ?? null,
       name: args.name ?? null,
       intent: args.intent ?? null,

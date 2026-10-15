@@ -60,6 +60,12 @@ type Appointment = {
   created_at: string;
 };
 type Handoff = { id: string; lead_phone: string | null; lead_name?: string | null; reason?: string; urgency?: string; notes?: string; reason_type?: string; status: string; created_at: string };
+// Especificación formal del agente de chat (16/10/2026, sección CRM: "...y
+// resumen de conversación"): el agente ya llamaba a save_conversation/
+// create_conversation_summary, pero esos datos no se veían en ningún sitio
+// del CRM -- se guardaban y ahí se quedaban. Se muestran ahora en la ficha
+// del cliente.
+type ConversationSummary = { id: string; phone?: string | null; summary: string; created_at: string };
 type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; portal?: string | null; draft_note?: string; thread_id?: string; in_reply_to?: string; answered?: boolean; created_at: string };
 type VehicleOverride = { vehicle_id: string; price_eur: number };
 
@@ -872,6 +878,9 @@ crm.get("/clientes/:id", (req, res) => {
   const key = lead.phone ?? "";
   const appts = list<Appointment>("appointments").filter((a) => a.lead_phone === key);
   const resv = list<Reservation>("reservations").filter((r) => r.lead_phone === key);
+  const summaries = list<ConversationSummary>("conversation_summaries")
+    .filter((c) => c.phone === key)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
   const t = TEMP[lead.temperature] ?? TEMP.COLD;
   const body = `<p><a class="link" href="/crm/clientes">← Volver a clientes</a></p>
 <h1>${esc(lead.name || lead.phone || "Cliente")}</h1>
@@ -881,6 +890,7 @@ crm.get("/clientes/:id", (req, res) => {
 <p><b>Visitas:</b> ${appts.length === 0 ? "ninguna" : appts.map((a) => `${esc(a.requested_date ?? "")} ${esc(a.requested_time ?? "")} (${esc(APPOINTMENT_TEXT[a.status] ?? a.status)})`).join(" · ")}</p>
 <p><b>Reservas:</b> ${resv.length === 0 ? "ninguna" : resv.map((r) => `${esc(vehicleName(r.vehicle_id))}: ${esc(RESERVATION_TEXT[r.status] ?? r.status)}`).join(" · ")}</p>
 ${phoneLink(lead.phone)}</div>
+${summaries.length > 0 ? `<div class="box"><h3 style="margin-top:0">Resumen de conversaciones</h3>${summaries.map((s) => `<p class="sub">${esc(fmtDate(s.created_at))}</p><p>${esc(s.summary)}</p>`).join("<hr>")}</div>` : ""}
 <form class="box" method="post" action="/crm/clientes/${esc(lead.id)}">
 <label>✏️ Nombre</label><input name="nombre" value="${esc(lead.name ?? "")}">
 <label>✏️ Coche de interés</label><input name="vehicle_interest" value="${esc(lead.vehicle_interest ?? "")}">
