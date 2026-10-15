@@ -226,14 +226,18 @@ async function syncVoice(state) {
       type: "warm_transfer",
       agent_detection_timeout_ms: 20000,
       public_handoff_option: { type: "static_message", message: `Un momento, te paso con ${name}.` },
-      // Pedido real, 14/10/2026: si Ramón/José no cogen la transferencia y
-      // ven una llamada perdida, quieren poder devolverla y que les salga el
-      // cliente real, no el agente. RIESGO REAL conocido (ver docs/comunidad
-      // de Retell): Twilio puede rechazar la llamada con un 403 si no
-      // permite mostrar un número que la cuenta no posee ni tiene verificado
-      // -- si eso pasa, hay que revertir esto de inmediato. Probar con una
-      // llamada real antes de dar esto por bueno.
-      show_transferee_as_caller: true,
+      // REVERTIDO (15/10/2026): show_transferee_as_caller se probó con una
+      // llamada real del propio Eliud y pareció funcionar, pero al revisar
+      // el historial completo de llamadas reales se confirmó el riesgo que
+      // ya se había anotado aquí: Twilio rechaza la transferencia con el
+      // error 32204 "Invalid Caller ID" cada vez que el número del cliente
+      // real no está verificado en la cuenta de Twilio -- que es
+      // prácticamente siempre. Resultado real medido: 8 de 14 intentos de
+      // transferencia a clientes reales fallaron por esto (~70%), incluida
+      // la llamada real más reciente del historial. Una transferencia que
+      // funciona siempre (mostrando el número del negocio) vale mucho más
+      // que el cosmético de que Ramón/José vean el número del cliente al
+      // devolver la llamada perdida.
     };
   }
   // CRÍTICO (13/10/2026, encargo de conexión telefónica, sección 5): si
