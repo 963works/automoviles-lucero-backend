@@ -250,6 +250,26 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
 <form method="post" action="/crm/salir" style="margin:0"><button class="btn light" type="submit">Salir</button></form></header>
 <main>${msg ? `<div class="msg">${esc(msg)}</div>` : ""}${body}</main>
 <script>
+// Mantiene el scroll al enviar un formulario (14/10/2026, a petición real:
+// "cada vez que elimino un cliente la página vuelve al principio"). Cualquier
+// acción con botón (eliminar, confirmar, cancelar...) hace un POST normal que
+// recarga la página entera -- el navegador vuelve arriba por defecto. Se
+// guarda la posición justo antes de enviar cualquier formulario de esta
+// página, y se restaura al cargar la misma URL base (sin la query de
+// mensaje) después del redirect. Genérico: funciona en cualquier lista del
+// CRM, no solo en Clientes.
+(function () {
+  var KEY = "lucero_scroll:" + location.pathname;
+  var saved = sessionStorage.getItem(KEY);
+  if (saved) {
+    sessionStorage.removeItem(KEY);
+    var y = parseInt(saved, 10);
+    if (!isNaN(y)) window.scrollTo(0, y);
+  }
+  document.addEventListener("submit", function () {
+    try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+  }, true);
+})();
 // Timbre real (13/10/2026, corregido tras probarlo en vivo): avisa con un
 // sonido tipo "ding" y refresca la página sola cuando aparece una alerta
 // urgente nueva (lead caliente, reserva, escalado) -- comprueba cada 15s en
