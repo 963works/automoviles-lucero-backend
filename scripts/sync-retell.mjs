@@ -183,12 +183,21 @@ const AGENT_TOOLS = [
   }),
   tool("update_appointment", "Modifica fecha/hora de una cita ya solicitada.", { appointment_id: S, requested_date: S, requested_time: S, notes: S }, ["appointment_id"]),
   tool("cancel_appointment", "Cancela una cita ya solicitada.", { appointment_id: S, reason: S }, ["appointment_id"]),
-  // create_reservation_pending / submit_payment_receipt quedaron FUERA de las
-  // tools del agente a propósito (decisión del usuario): la reserva y el
-  // pago de la señal de 500€ los gestiona siempre un comercial directamente,
-  // nunca el agente -- basta con create_handoff urgente. El backend sigue
-  // teniendo esas funciones por si se necesitan desde una herramienta
-  // interna del equipo más adelante, pero no se le declaran a Retell.
+  // submit_payment_receipt queda FUERA de las tools del agente a propósito
+  // (decisión del usuario): el pago de la señal de 500€ lo gestiona siempre
+  // un comercial directamente, nunca el agente. El backend sigue teniendo
+  // esa función por si se necesita desde una herramienta interna del equipo
+  // más adelante, pero no se le declara a Retell.
+  // create_reservation_pending SÍ se declara (16/10/2026, a petición real:
+  // "si José no responde, ya que deje la reserva hecha") -- excepción
+  // puntual y solo para cuando ni Ramón ni José contestan tras una reserva
+  // de verdad pedida por el cliente (ver prompt-core.md, CUÁNDO SE
+  // TRANSFIERE EN VOZ). No confirma pago ni cambia el vehículo a RESERVED
+  // de verdad -- solo lo deja en pending_payment, protegiendo la unidad
+  // mientras el equipo gestiona el cobro.
+  tool("create_reservation_pending", "Inicia una reserva (pending_payment) para un vehículo ya identificado y disponible -- NUNCA confirma el pago. Úsalo SOLO cuando el cliente ya pidió reservar y ni Ramón ni José contestaron la transferencia.", {
+    vehicle_id: S, lead_phone: S,
+  }, ["vehicle_id"]),
   tool("request_financing", "Registra una solicitud de financiación y comprueba los criterios orientativos confirmados. Nunca aprueba ni calcula cuota.", { lead_phone: S, vehicle_id: S }),
   tool("create_vehicle_valuation", "Registra una solicitud de tasación/compra de un vehículo que trae el cliente (venta a particular). Nunca tasa automáticamente.", {
     lead_phone: S, make: S, model: S, year: N, km: N, condition: S, known_issues: S, expected_price_eur: N, trade_in_vehicle_id: S,
