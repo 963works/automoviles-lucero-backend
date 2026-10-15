@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { readCollection, writeCollection } from "../store.js";
 import { handleChatMessage } from "../chat/agent.js";
-import { isGoogleConnected, sendGmail } from "../integrations/google.js";
+import { isGoogleConnected, sendGmail, googleStatus } from "../integrations/google.js";
 import { decideInterest, detectPortal } from "./interest.js";
 
 export type InboundEmail = {
@@ -99,6 +99,17 @@ function recordInbox(email: InboundEmail, outcome: string, extra?: { portal?: st
 }
 
 export async function processInboundEmail(email: InboundEmail): Promise<{ outcome: string; reply?: string; error?: string }> {
+  // FALLO REAL grave detectado (15/10/2026): el correo de prueba "Probar
+  // Gmail" (que se envía desde la propia cuenta conectada A SÍ MISMA) se
+  // coló como si fuera un cliente nuevo, y cada respuesta automática volvía
+  // a aparecer como correo "nuevo" en la siguiente pasada del poller (cada 3
+  // minutos) -- bucle infinito de autorespuestas, confirmado en producción
+  // real. Guarda de seguridad obligatoria: un correo que viene de la propia
+  // cuenta del negocio NUNCA se procesa ni se contesta, pase lo que pase.
+  const ownEmail = googleStatus().connected_email;
+  if (ownEmail && email.from.toLowerCase() === ownEmail.toLowerCase()) {
+    return { outcome: "skipped_self_email" };
+  }
   const looksAutomated = /no-?reply|mailer-daemon|postmaster|do-?not-?reply/i.test(email.from);
   if (email.automated || looksAutomated || !email.from.includes("@")) {
     return { outcome: "skipped_automated" };
@@ -108,9 +119,21 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
     return { outcome: "duplicate" };
   }
 
-  const priorThread = processed.some((p) => p.key.startsWith(`${email.from}|`) && p.outcome !== "automated_no_reply");
-  const decision = decideInterest({ subject: email.subject, text: email.text, hasPriorThread: priorThread });
   const portalInfo = detectPortal({ from: email.from, subject: email.subject, text: email.text });
+  // Decisión real del negocio (15/10/2026, tras el fallo del bucle): el
+  // agente de correo SOLO contesta automáticamente consultas reales de
+  // clientes que llegan desde Wallapop o Coches.net preguntando por coches
+  // -- nunca bancos, datos personales, publicidad, ni ningún otro tipo de
+  // correo, aunque mencione algo de pasada relacionado con vehículos. Todo
+  // lo demás se registra para revisión humana (/crm/pendientes), nunca se
+  // contesta solo.
+  const priorThread = processed.some((p) => p.key.startsWith(`${email.from}|`) && p.outcome !== "automated_no_reply");
+  const decision = decideInterest({
+    subject: email.subject,
+    text: email.text,
+    hasPriorThread: priorThread,
+    isAllowedPortal: portalInfo.portal === "Wallapop" || portalInfo.portal === "Coches.net",
+  });
   if (!decision.interested) {
     recordInbox(email, "automated_no_reply", { portal: portalInfo.portal });
     writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "automated_no_reply" }].slice(-MAX_PROCESSED_KEPT));

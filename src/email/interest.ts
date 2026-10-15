@@ -9,6 +9,17 @@ const AUTOMATED_ONLY = [
   /\b(newsletter|boletín|webinar|promoci[oó]n de (lanzamiento|oferta)|descuento exclusivo)\b/i,
 ];
 
+// Bancos/entidades financieras y publicidad (a petición real, 15/10/2026,
+// tras el fallo del bucle de autorespuesta): el agente de correo tiene
+// PROHIBIDO contestar esto automáticamente, nunca, aunque mencione algo
+// comercial de pasada -- siempre a revisión humana.
+const BANK_OR_ADS = [
+  /\b(banco|bbva|santander|caixabank|la caixa|ing direct|openbank|bankinter|unicaja|sabadell|revolut|n26|wise)\b/i,
+  /\b(movimiento\s+bancario|extracto|saldo\s+de\s+tu\s+cuenta|cargo\s+en\s+tu\s+cuenta|transferencia\s+recibida|transferencia\s+enviada)\b/i,
+  /\b(oferta\s+especial|black\s*friday|cyber\s*monday|c[oó]digo\s+promocional|rebajas|liquidaci[oó]n\s+total)\b/i,
+  /\b(publicidad|marketing|campa[nñ]a\s+de\s+email)\b/i,
+];
+
 const INTERESTED = [
   /\b(coche|coches|veh[ií]culo|vehiculos|veh[ií]culos|furgoneta|furgonetas|todoterreno|suv|monovolumen|berlina|familiar|4x4)\b/i,
   /\b(precio|cu[aá]nto cuesta|cu[aá]nto vale|cu[aá]nto es|oferta|financ\w*|plazos|cuota)\b/i,
@@ -80,13 +91,24 @@ export function detectPortal(input: { from: string; subject: string; text: strin
 
 export type InterestDecision = { interested: boolean; reason: string };
 
-export function decideInterest(input: { subject: string; text: string; hasPriorThread: boolean }): InterestDecision {
+export function decideInterest(input: { subject: string; text: string; hasPriorThread: boolean; isAllowedPortal: boolean }): InterestDecision {
   const body = `${input.subject}\n${input.text}`;
   if (SENSITIVE_DOCS.some((r) => r.test(body))) {
     return { interested: false, reason: "documento_sensible_revision_humana" };
   }
   if (AUTOMATED_ONLY.some((r) => r.test(body))) {
     return { interested: false, reason: "correo_masivo_o_baja" };
+  }
+  if (BANK_OR_ADS.some((r) => r.test(body))) {
+    return { interested: false, reason: "banco_o_publicidad_prohibido" };
+  }
+  // Decisión real del negocio (15/10/2026): el agente de correo SOLO
+  // contesta automáticamente si el correo viene de Wallapop o Coches.net --
+  // nunca por venir de cualquier otra dirección, por mucho que mencione
+  // coches, precio, cita, etc. Si no es de uno de esos dos portales, se
+  // registra para que lo vea el equipo, pero nunca se contesta solo.
+  if (!input.isAllowedPortal) {
+    return { interested: false, reason: "no_es_wallapop_ni_cochesnet" };
   }
   if (input.hasPriorThread) {
     return { interested: true, reason: "conversacion_previa" };
@@ -97,15 +119,5 @@ export function decideInterest(input: { subject: string; text: string; hasPriorT
   if (PORTAL_NOTIFICATION_TEMPLATE.some((r) => r.test(body))) {
     return { interested: true, reason: "notificacion_real_de_portal" };
   }
-  // 13/10/2026, decisión del negocio: el agente de correo solo responde
-  // automáticamente consultas de ventas/vehículos, reservas, citas/visitas
-  // o información del negocio -- nada más se marca como interesado por
-  // defecto. Esto SÍ coincide por fin con lo que ya decía el comentario de
-  // cabecera de este archivo ("lo que no encaja... pasa a revisión
-  // humana") -- antes el código hacía justo lo contrario. Un correo sin
-  // tema claro (candidatos a trabajo, prensa, proveedores, spam real que
-  // no cayó en AUTOMATED_ONLY) queda registrado en email_inbox/CRM
-  // (/crm/pendientes) para que el equipo lo vea y conteste si hace falta
-  // -- nunca se contesta solo ni se pierde.
   return { interested: false, reason: "sin_tema_claro_revision_humana" };
 }
