@@ -201,6 +201,18 @@ app.get("/email/inbox", requireAdminToken, (_req, res) => {
   res.json(readCollection<unknown>("email_inbox").slice(-50));
 });
 
+// Depuración real (15/10/2026, a petición de "esta mal, arregla eso" tras
+// una recurrencia del fallback en producción): permite ver exactamente qué
+// llamó el agente y en qué conversación, sin tener que adivinar leyendo el
+// store a mano. Solo lectura, con token de admin.
+app.get("/debug/tool_call_logs", requireAdminToken, (_req, res) => {
+  res.json(readCollection<unknown>("tool_call_logs").slice(-200));
+});
+
+app.get("/debug/chat_conversations", requireAdminToken, (_req, res) => {
+  res.json(readCollection<unknown>("chat_conversations").slice(-50));
+});
+
 // Chat propio de Miguel (fuera de Retell). Lo llama el canal de WhatsApp (n8n)
 // o cualquier web que conecte el negocio. Solo con el token de admin.
 app.post("/chat/message", requireAdminToken, async (req, res) => {
