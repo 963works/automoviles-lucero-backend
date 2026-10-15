@@ -2,6 +2,7 @@ import { appendToCollection, readCollection, writeCollection } from "../store.js
 import { envelope } from "../response.js";
 import { businessInfo } from "../data/business-info.js";
 import { raiseAlert } from "../alerts/alerts.js";
+import { moveToTrash } from "../crm/trash.js";
 
 type Temperature = "COLD" | "WARM" | "HOT";
 
@@ -191,4 +192,30 @@ export function stopFollowups(args: { phone: string }) {
   writeCollection("leads", leads);
 
   return envelope({ status: "ok", data: lead, source: "registro interno" });
+}
+
+// Limpieza masiva de clientes de prueba/spam (15/10/2026, a petición real:
+// "estos son clientes falsos, solo deja la ficha de Ángel"). Admin-only,
+// nunca borra de verdad -- cada lead quitado pasa por la Papelera (igual que
+// el botón "Eliminar" del CRM), así que es recuperable si alguno resulta no
+// ser falso.
+export function purgeLeadsExcept(args: { keep_phones?: string[]; keep_emails?: string[]; admin_email: string }) {
+  const keepPhones = new Set(args.keep_phones ?? []);
+  const keepEmails = new Set(args.keep_emails ?? []);
+  const leads = readLeads();
+  const toRemove = leads.filter((l) => {
+    const keptByPhone = l.phone != null && keepPhones.has(l.phone);
+    const keptByEmail = l.email != null && keepEmails.has(l.email);
+    return !keptByPhone && !keptByEmail;
+  });
+  for (const lead of toRemove) {
+    moveToTrash("leads", lead, `Cliente: ${lead.name || lead.phone || lead.email || "sin nombre"}`, args.admin_email);
+  }
+  const kept = leads.filter((l) => !toRemove.includes(l));
+  writeCollection("leads", kept);
+  return envelope({
+    status: "ok",
+    data: { removed_count: toRemove.length, kept_count: kept.length, removed: toRemove.map((l) => ({ id: l.id, name: l.name, phone: l.phone, email: l.email })) },
+    source: "registro interno",
+  });
 }
