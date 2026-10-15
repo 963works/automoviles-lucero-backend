@@ -79,7 +79,20 @@ const SENSITIVE_DOCS = [
   /\b(extracto\s+bancario|iban\b|n[uú]mero\s+de\s+cuenta|tarjeta\s+de\s+cr[eé]dito)\b/i,
   /\b(dni|n[ieí]e|pasaporte|documento\s+de\s+identidad)\b/i,
   /\b(contrato\s+(de\s+)?(trabajo|arrendamiento|alquiler|laboral))\b/i,
+  // Especificación formal del agente de Gmail (15/10/2026, sección 3 y 8):
+  // "correos con contraseñas, credenciales, datos confidenciales" y
+  // "comunicaciones legales, bancarias o fiscales" -- explícito en el
+  // encargo, no estaba cubierto todavía.
+  /\b(contrase[nñ]a|credenciales|usuario\s+y\s+clave)\b/i,
+  /\b(demanda|denuncia|requerimiento\s+legal|abogado|juzgado|hacienda|agencia\s+tributaria|inspecci[oó]n\s+fiscal)\b/i,
 ];
+
+// Especificación formal del agente de Gmail (15/10/2026, sección 3:
+// "comunicaciones internas entre empleados, propietarios o proveedores"):
+// direcciones propias del negocio que reciben avisos internos (resúmenes
+// diarios, etc.) y que nunca son un cliente, aunque mencionen un vehículo de
+// pasada dentro de ese resumen.
+const INTERNAL_SENDERS = [/^automovileslucero@gmail\.com$/i];
 
 // Portales de compraventa (encargo real, 14/10/2026): se detecta el origen
 // para dejarlo registrado en el CRM, y sobre todo para distinguir el caso
@@ -123,8 +136,11 @@ export function detectPortal(input: { from: string; subject: string; text: strin
 
 export type InterestDecision = { interested: boolean; reason: string };
 
-export function decideInterest(input: { from: string; subject: string; text: string; hasPriorThread: boolean; isAllowedPortal: boolean }): InterestDecision {
+export function decideInterest(input: { from: string; subject: string; text: string; hasPriorThread: boolean; portal: string | null }): InterestDecision {
   const body = `${input.subject}\n${input.text}`;
+  if (INTERNAL_SENDERS.some((r) => r.test(input.from))) {
+    return { interested: false, reason: "remitente_interno_del_negocio" };
+  }
   if (SENSITIVE_DOCS.some((r) => r.test(body))) {
     return { interested: false, reason: "documento_sensible_revision_humana" };
   }
@@ -140,13 +156,18 @@ export function decideInterest(input: { from: string; subject: string; text: str
   if (SECURITY_OR_ACCOUNT.some((r) => r.test(body))) {
     return { interested: false, reason: "aviso_seguridad_o_cuenta_prohibido" };
   }
-  // Decisión real del negocio (15/10/2026): el agente de correo SOLO
-  // contesta automáticamente si el correo viene de Wallapop o Coches.net --
-  // nunca por venir de cualquier otra dirección, por mucho que mencione
-  // coches, precio, cita, etc. Si no es de uno de esos dos portales, se
-  // registra para que lo vea el equipo, pero nunca se contesta solo.
-  if (!input.isAllowedPortal) {
-    return { interested: false, reason: "no_es_wallapop_ni_cochesnet" };
+  // Decisión real del negocio (15/10/2026, actualizada el mismo día: "los de
+  // Wallapop quítalos por ahora, dejemos solo coches.net o clientes que
+  // escriban interesados"): Wallapop queda desactivado del todo por ahora --
+  // ya se confirmó que rebota cualquier respuesta por correo, así que no
+  // compensa ni siquiera registrar el intento. Lo mismo para cualquier otro
+  // portal que no sea Coches.net (no hay evidencia de que funcione, mejor no
+  // arriesgar). Coches.net sí se mantiene (confirmado, respuestas reales sin
+  // rebote). Y ahora SÍ se permite contestar a un cliente que escribe
+  // DIRECTO (sin venir de ningún portal) si de verdad muestra interés real --
+  // antes se bloqueaba cualquier correo que no viniera de un portal.
+  if (input.portal && input.portal !== "Coches.net") {
+    return { interested: false, reason: "portal_no_habilitado_para_respuesta_automatica" };
   }
   if (input.hasPriorThread) {
     return { interested: true, reason: "conversacion_previa" };

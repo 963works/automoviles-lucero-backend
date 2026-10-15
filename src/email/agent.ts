@@ -3,6 +3,8 @@ import { readCollection, writeCollection } from "../store.js";
 import { handleChatMessage } from "../chat/agent.js";
 import { isGoogleConnected, sendGmail, googleStatus } from "../integrations/google.js";
 import { decideInterest, detectPortal } from "./interest.js";
+import { raiseAlert } from "../alerts/alerts.js";
+import { isEmailAutoSendEnabled } from "../tools/agent-toggle.js";
 
 export type InboundEmail = {
   messageKey: string;
@@ -120,13 +122,14 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   }
 
   const portalInfo = detectPortal({ from: email.from, subject: email.subject, text: email.text });
-  // Decisión real del negocio (15/10/2026, tras el fallo del bucle): el
-  // agente de correo SOLO contesta automáticamente consultas reales de
-  // clientes que llegan desde Wallapop o Coches.net preguntando por coches
-  // -- nunca bancos, datos personales, publicidad, ni ningún otro tipo de
-  // correo, aunque mencione algo de pasada relacionado con vehículos. Todo
-  // lo demás se registra para revisión humana (/crm/pendientes), nunca se
-  // contesta solo.
+  // Decisión real del negocio (15/10/2026, tras el fallo del bucle, y
+  // actualizada el mismo día tras desactivar Wallapop -- ver decideInterest
+  // en interest.ts para el detalle exacto): el agente de correo SOLO
+  // contesta automáticamente consultas reales de Coches.net o de clientes
+  // que escriben directo mostrando interés real -- nunca Wallapop (rebota
+  // cualquier respuesta), ni bancos, datos personales, publicidad, ni ningún
+  // otro tipo de correo sin interés claro. Todo lo demás se registra para
+  // revisión humana (/crm/pendientes), nunca se contesta solo.
   // FALLO REAL detectado (15/10/2026): esto comparaba por DIRECCIÓN de
   // remitente -- pero Wallapop/Coches.net mandan TODOS sus avisos (una
   // consulta real, un aviso de seguridad, lo que sea) desde la misma
@@ -141,10 +144,16 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
     subject: email.subject,
     text: email.text,
     hasPriorThread: priorThread,
-    isAllowedPortal: portalInfo.portal === "Wallapop" || portalInfo.portal === "Coches.net",
+    portal: portalInfo.portal,
   });
   if (!decision.interested) {
-    recordInbox(email, "automated_no_reply", { portal: portalInfo.portal });
+    // Especificación formal (15/10/2026, sección 10: "sin almacenar
+    // contenido sensible innecesario"): si el motivo de no contestar es que
+    // el correo trae datos sensibles (DNI, IBAN, contraseñas...), el texto
+    // real ya cumplió su única función (decidir no responder) -- guardarlo
+    // tal cual sería acumular justo el dato que no hace falta conservar.
+    const sensitive = decision.reason === "documento_sensible_revision_humana";
+    recordInbox(sensitive ? { ...email, text: "[contenido sensible -- no almacenado]" } : email, "automated_no_reply", { portal: portalInfo.portal });
     writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "automated_no_reply", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
     return { outcome: "automated_no_reply" };
   }
@@ -164,7 +173,29 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   if (portalInfo.mustManageOnPortal) {
     recordInbox(email, "pendiente_gestion_portal", { portal: portalInfo.portal, draftNote: body });
     writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "pendiente_gestion_portal", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
+    // Mejora real (15/10/2026, a petición de "qué podemos hacer para mejorar
+    // eso"): no hay API de mensajería de Wallapop para responder sin más --
+    // así que la mejora posible es que el equipo se entere al instante y ya
+    // tenga el texto listo para copiar, en vez de depender de que alguien
+    // mire Pendientes por su cuenta. Mismo aviso urgente (correo + CRM) que
+    // usa el resto del negocio, con el texto de respuesta ya incluido.
+    raiseAlert({
+      kind: "gestion_portal",
+      reason: `${portalInfo.portal ?? "Portal"}: "${email.subject}" -- responde desde la propia app, el correo no le llega al cliente.`,
+      draft_note: body,
+    });
     return { outcome: "pendiente_gestion_portal", reply: body };
+  }
+
+  // Modo de prueba / interruptor de envío automático (15/10/2026,
+  // especificación formal, sección 10): con el envío desactivado, el agente
+  // sigue clasificando y redactando igual que siempre, pero la respuesta se
+  // queda como nota en Pendientes en vez de salir de verdad -- útil para
+  // probar cambios de prompt/reglas sin arriesgar un envío real a un cliente.
+  if (!isEmailAutoSendEnabled()) {
+    recordInbox(email, "modo_prueba_sin_envio", { portal: portalInfo.portal, draftNote: body });
+    writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "modo_prueba_sin_envio", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
+    return { outcome: "modo_prueba_sin_envio", reply: body };
   }
 
   const delivery = await deliverEmail(

@@ -9,7 +9,7 @@ import { getOfficialStatus, setOfficialStatus, type OfficialVehicleStatus } from
 import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
 import { moveToTrash, listTrash, restoreFromTrash, purgeFromTrash } from "./trash.js";
-import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "../tools/agent-toggle.js";
+import { isVoiceAgentEnabled, setVoiceAgentEnabled, isEmailAutoSendEnabled, setEmailAutoSendEnabled } from "../tools/agent-toggle.js";
 import {
   googleStatus,
   googleConfigMissing,
@@ -1071,6 +1071,14 @@ ${test ? `<p>Evento de prueba creado: <a href="${esc(test.link)}" target="_blank
 <form method="post" action="/crm/integraciones/google/borrar-prueba" style="display:inline"><button class="btn danger" type="submit">Borrar evento de prueba</button></form>` : ""}
 </div>`
     : "";
+  const emailSendOn = isEmailAutoSendEnabled();
+  const emailModeBox = `<div class="box"><h3 style="margin-top:0">Correo -- envío automático</h3>
+<p>Estado: <strong>${emailSendOn ? "Activado -- envía respuestas reales" : "Modo de prueba -- clasifica y redacta, pero no envía nada"}</strong></p>
+<form method="post" action="/crm/integraciones/correo/${emailSendOn ? "desactivar-envio" : "activar-envio"}" style="display:inline">
+<button class="btn ${emailSendOn ? "danger" : "ok"}" type="submit" onclick="return confirm('${emailSendOn ? "¿Pasar a modo de prueba? El agente seguirá leyendo y redactando respuestas, pero ninguna saldrá de verdad -- se quedan en Pendientes para revisar." : "¿Activar el envío automático? Las respuestas que redacte el agente empezarán a salir de verdad."}')">${emailSendOn ? "Pasar a modo de prueba" : "Activar envío automático"}</button>
+</form>
+<p class="sub">En modo de prueba, cada correo se clasifica y se redacta igual que siempre -- solo cambia que la respuesta se queda como nota en Pendientes en vez de enviarse. Útil para probar cambios sin arriesgar un envío real.</p>
+</div>`;
   const voiceOn = isVoiceAgentEnabled();
   const recentCalls = readCollection<{
     channel: string;
@@ -1124,6 +1132,7 @@ ${st.connected_at ? `<p>Conectada desde: ${esc(fmtDate(st.connected_at))}</p>` :
 <p>${connectButton} ${disconnectButton}</p>
 </div>
 ${tests}
+${emailModeBox}
 ${voiceBox}
 ${qualityBox}`;
   res.type("html").send(page("Integraciones", me(res), body, msgOf(req)));
@@ -1137,6 +1146,18 @@ crm.get("/integraciones/google/conectar", (_req, res) => {
   } catch (err) {
     back(res, "/crm/integraciones", describeGoogleError(err));
   }
+});
+
+crm.post("/integraciones/correo/activar-envio", (_req, res) => {
+  if (!onlyAdmin(res)) return back(res, "/crm", "Solo el administrador");
+  setEmailAutoSendEnabled(true, me(res).email);
+  back(res, "/crm/integraciones", "Envío automático de correo activado.");
+});
+
+crm.post("/integraciones/correo/desactivar-envio", (_req, res) => {
+  if (!onlyAdmin(res)) return back(res, "/crm", "Solo el administrador");
+  setEmailAutoSendEnabled(false, me(res).email);
+  back(res, "/crm/integraciones", "Modo de prueba activado -- el correo ya no envía respuestas reales.");
 });
 
 crm.post("/integraciones/telefono/activar", (_req, res) => {

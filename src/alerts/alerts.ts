@@ -6,13 +6,19 @@ import { isGoogleConnected, sendGmail } from "../integrations/google.js";
 // Avisos urgentes para Ramón y José. Cada aviso queda en el CRM (bloque de Hoy)
 // hasta que alguien lo marca como atendido, y además sale por correo desde la
 // cuenta del negocio si Google está conectado.
-export type AlertKind = "lead_caliente" | "handoff_urgente" | "reserva_pendiente";
+export type AlertKind = "lead_caliente" | "handoff_urgente" | "reserva_pendiente" | "gestion_portal";
 export type Alert = {
   id: string;
   kind: AlertKind;
   lead_phone: string | null;
   name: string | null;
   reason: string;
+  // draft_note (15/10/2026, a petición real -- "qué podemos hacer para
+  // mejorar eso" sobre Wallapop: no hay API de mensajería para responder
+  // automáticamente dentro de su app, así que la mejora real posible es que
+  // el equipo se entere al instante y ya tenga el texto listo para pegar,
+  // en vez de depender de que alguien mire Pendientes por su cuenta.
+  draft_note: string | null;
   status: "pendiente" | "atendida";
   email_status: string;
   created_at: string;
@@ -49,13 +55,16 @@ async function sendAlertEmail(alert: Alert) {
       ? "Cliente caliente: quiere comprar ya"
       : alert.kind === "reserva_pendiente"
         ? "RESERVA de 500 € -- gestionar cobro"
-        : "Atención urgente";
+        : alert.kind === "gestion_portal"
+          ? "Responder en la app -- el correo no llega"
+          : "Atención urgente";
   const body = [
     title,
     "",
     `Cliente: ${alert.name || "sin nombre"}`,
     `Teléfono: ${alert.lead_phone || "sin teléfono"}`,
     `Motivo: ${alert.reason}`,
+    ...(alert.draft_note ? ["", "Texto listo para copiar y pegar en la app:", "---", alert.draft_note, "---"] : []),
     "",
     "Llámale cuanto antes. Lo tienes en el CRM, en la pantalla Hoy:",
     "https://virelia-hub-lucero.lzc0bh.easypanel.host/crm",
@@ -76,6 +85,7 @@ export function raiseAlert(input: {
   lead_phone?: string | null;
   name?: string | null;
   reason: string;
+  draft_note?: string | null;
 }): Alert | null {
   const since = Date.now() - DEDUP_HOURS * 3600 * 1000;
   const alerts = readCollection<Alert>("alerts");
@@ -93,6 +103,7 @@ export function raiseAlert(input: {
     lead_phone: input.lead_phone ?? null,
     name: input.name ?? null,
     reason: input.reason,
+    draft_note: input.draft_note ?? null,
     status: "pendiente",
     email_status: "pendiente",
     created_at: new Date().toISOString(),
