@@ -243,3 +243,34 @@ export function purgeLeadsExcept(args: { keep_phones?: string[]; keep_emails?: s
     source: "registro interno",
   });
 }
+
+// mergeLeads (16/10/2026, para fusionar duplicados reales ya existentes de
+// antes del arreglo de normalizePhone -- nunca se hace solo, siempre a
+// petición explícita, uno por uno). Se queda con el registro más antiguo
+// (keep_id), rellena los huecos con lo que tenga el duplicado (remove_id)
+// sin pisar datos ya buenos, junta las notas de los dos, y usa el canal y
+// el último contacto más recientes de los dos -- igual que haría upsertLead
+// si hubiera encontrado el mismo teléfono desde el principio.
+export function mergeLeads(args: { keep_id: string; remove_id: string; admin_email: string }) {
+  const leads = readLeads();
+  const keep = leads.find((l) => l.id === args.keep_id);
+  const remove = leads.find((l) => l.id === args.remove_id);
+  if (!keep || !remove) {
+    return envelope({ status: "error", data: null, error_code: "lead_not_found", source: "registro interno" });
+  }
+  keep.name = keep.name ?? remove.name;
+  keep.email = keep.email ?? remove.email;
+  keep.intent = keep.intent ?? remove.intent;
+  keep.vehicle_interest = keep.vehicle_interest ?? remove.vehicle_interest;
+  keep.budget = keep.budget ?? remove.budget;
+  keep.purchase_timing = keep.purchase_timing ?? remove.purchase_timing;
+  keep.objection = keep.objection ?? remove.objection;
+  keep.notes = [keep.notes, remove.notes].filter(Boolean).join(" | ") || null;
+  const keepIsNewer = keep.last_contact >= remove.last_contact;
+  keep.channel = keepIsNewer ? keep.channel : remove.channel;
+  keep.last_contact = keepIsNewer ? keep.last_contact : remove.last_contact;
+  keep.updated_at = now();
+  moveToTrash("leads", remove, `Duplicado fusionado en ${keep.id}: ${remove.name || remove.phone || remove.email || "sin nombre"}`, args.admin_email);
+  writeCollection("leads", leads.filter((l) => l.id !== remove.id));
+  return envelope({ status: "ok", data: keep, source: "registro interno" });
+}
