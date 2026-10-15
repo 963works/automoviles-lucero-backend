@@ -1074,11 +1074,16 @@ ${test ? `<p>Evento de prueba creado: <a href="${esc(test.link)}" target="_blank
   const voiceOn = isVoiceAgentEnabled();
   const recentCalls = readCollection<{
     channel: string;
+    call_id?: string | null;
+    from_number?: string | null;
     created_at: string;
     duration_ms: number | null;
     cost_cents: number | null;
     transfer_outcome?: string | null;
-    custom_analysis_data?: { outcome?: string };
+    custom_analysis_data?: { outcome?: string; issues_detected?: string };
+    max_pause_sec?: number | null;
+    needs_review?: boolean;
+    summary?: string | null;
   }>("call_analyses").filter((c) => c.channel === "VOICE");
   const lastCall = recentCalls.length ? recentCalls[recentCalls.length - 1] : null;
   const totalCostEur = recentCalls.reduce((sum, c) => sum + (c.cost_cents ?? 0), 0) / 100;
@@ -1097,6 +1102,17 @@ ${test ? `<p>Evento de prueba creado: <a href="${esc(test.link)}" target="_blank
 <p>Transferencias -- a Ramón: <strong>${transferRamon}</strong> · a José: <strong>${transferJose}</strong> · nadie respondió: <strong>${transferNadie}</strong></p>
 <p class="sub">El coste y las transferencias son los reales que reporta Retell al terminar cada llamada (sumado desde el 13/10/2026) -- no incluye llamadas anteriores a esa fecha, y no hay un evento en vivo por cada intento, solo el resultado final de la llamada.</p>
 </div>`;
+  // Calidad de llamadas (15/10/2026, el "cerebro" pedido): cada llamada real
+  // queda marcada sola (ver tools/webhooks.ts) si tuvo una pausa larga, un
+  // fallo o un incidente de seguridad -- así se ve de un vistazo cuáles
+  // merece la pena escuchar, en vez de pedir la API de Retell cada vez.
+  const toReview = recentCalls.filter((c) => c.needs_review).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10);
+  const qualityBox = `<div class="box"><h3 style="margin-top:0">Calidad de llamadas (automático)</h3>
+<p class="sub">Cada llamada real se revisa sola al terminar -- aquí aparecen las que tuvieron una pausa larga (más de 6s), no salieron bien, o tuvieron algún incidente. Útil para detectar fallos reales sin tener que escuchar todas.</p>
+${toReview.length === 0
+  ? `<p>Ninguna llamada marcada para revisar por ahora.</p>`
+  : toReview.map((c) => `<p>${esc(fmtDate(c.created_at))} -- ${esc(c.from_number ?? "número desconocido")}${c.max_pause_sec ? ` -- pausa de ${c.max_pause_sec.toFixed(1)}s` : ""}${c.custom_analysis_data?.issues_detected && c.custom_analysis_data.issues_detected !== "ninguno" ? ` -- ${esc(c.custom_analysis_data.issues_detected)}` : ""}${c.summary ? `<br><span class="sub">${esc(c.summary)}</span>` : ""}</p>`).join("")}
+</div>`;
   const body = `<h1>Integraciones</h1>
 <p class="sub">Conexión con la cuenta de Google del negocio: correo y calendario de citas.</p>
 ${config}
@@ -1108,7 +1124,8 @@ ${st.connected_at ? `<p>Conectada desde: ${esc(fmtDate(st.connected_at))}</p>` :
 <p>${connectButton} ${disconnectButton}</p>
 </div>
 ${tests}
-${voiceBox}`;
+${voiceBox}
+${qualityBox}`;
   res.type("html").send(page("Integraciones", me(res), body, msgOf(req)));
 });
 

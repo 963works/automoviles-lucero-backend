@@ -7,6 +7,30 @@ import { appendToCollection } from "../store.js";
 // sin que nadie tenga que leer transcripts a mano. No verificamos la firma
 // del webhook todavía (pendiente si hace falta más adelante) -- por ahora
 // solo registra, no ejecuta ninguna acción sensible a partir del payload.
+// "Cerebro" de calidad de llamadas (15/10/2026, a petición real: "construye
+// un cerebro para mejorar la calidad de las llamadas"). En vez de depender
+// de analizar transcripts a mano cada vez, cada llamada real queda marcada
+// aquí mismo con la pausa más larga detectada y si hace falta revisarla --
+// así el equipo (o quien retome este proyecto) ve de un vistazo qué
+// llamadas reales merece la pena escuchar, en vez de tener que pedir la API
+// de Retell cada vez.
+function maxPauseSeconds(transcriptObject: any): number | null {
+  if (!Array.isArray(transcriptObject) || transcriptObject.length < 2) return null;
+  let max = 0;
+  for (let i = 1; i < transcriptObject.length; i++) {
+    const prevWords = transcriptObject[i - 1]?.words;
+    const curWords = transcriptObject[i]?.words;
+    if (!Array.isArray(prevWords) || prevWords.length === 0) continue;
+    if (!Array.isArray(curWords) || curWords.length === 0) continue;
+    const prevEnd = prevWords[prevWords.length - 1]?.end;
+    const curStart = curWords[0]?.start;
+    if (typeof prevEnd !== "number" || typeof curStart !== "number") continue;
+    const gap = curStart - prevEnd;
+    if (gap > max) max = gap;
+  }
+  return max;
+}
+
 export function handleRetellWebhook(payload: any) {
   const event = payload?.event;
   if (event !== "call_analyzed" && event !== "chat_analyzed") {
@@ -15,6 +39,15 @@ export function handleRetellWebhook(payload: any) {
 
   const call = payload.call ?? payload.chat ?? {};
   const analysis = call.call_analysis ?? call.chat_analysis ?? {};
+  const maxPauseSec = event === "call_analyzed" ? maxPauseSeconds(call.transcript_object) : null;
+  const issues = analysis.custom_analysis_data?.issues_detected ?? null;
+  const security = analysis.custom_analysis_data?.security_event ?? null;
+  const needsReview = Boolean(
+    analysis.call_successful === false ||
+      (maxPauseSec != null && maxPauseSec > 6) ||
+      (issues && issues !== "ninguno") ||
+      (security && security !== "ninguno"),
+  );
   const record = {
     id: crypto.randomUUID(),
     event,
@@ -43,6 +76,8 @@ export function handleRetellWebhook(payload: any) {
     // real -- no es un evento en vivo por cada intento.
     transfer_outcome: analysis.custom_analysis_data?.transfer_outcome ?? null,
     custom_analysis_data: analysis.custom_analysis_data ?? {},
+    max_pause_sec: maxPauseSec,
+    needs_review: needsReview,
     created_at: new Date().toISOString(),
   };
   appendToCollection("call_analyses", record);
