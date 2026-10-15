@@ -16,6 +16,7 @@ import { startScheduler } from "./scheduler.js";
 import { appendToCollection, readCollection, writeCollection } from "./store.js";
 import { createAuthUrl, consumeState, exchangeCodeAndStore, googleStatus, describeGoogleError } from "./integrations/google.js";
 import { sendWhatsappText, isWhatsappConnected } from "./integrations/whatsapp.js";
+import { sendFacebookText, isFacebookConnected, verifyFacebookSignature } from "./integrations/facebook.js";
 import twilioPkg from "twilio";
 import { verifyTwilioSignature } from "./integrations/twilio-signature.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled } from "./tools/agent-toggle.js";
@@ -237,6 +238,10 @@ app.get("/debug/crm_users", requireAdminToken, (_req, res) => {
   res.json(listUsers().map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, created_at: u.created_at })));
 });
 
+app.get("/debug/facebook_processed", requireAdminToken, (_req, res) => {
+  res.json(readCollection<unknown>("facebook_processed").slice(-100));
+});
+
 // Chat propio de Miguel (fuera de Retell). Lo llama el canal de WhatsApp (n8n)
 // o cualquier web que conecte el negocio. Solo con el token de admin.
 app.post("/chat/message", requireAdminToken, async (req, res) => {
@@ -305,6 +310,69 @@ app.post("/channels/whatsapp/inbound", requireAdminToken, async (req, res) => {
     }
     console.error("[whatsapp] inbound:", err);
     res.status(502).json({ error: "whatsapp_processing_error" });
+  }
+});
+
+// Facebook Messenger real (16/10/2026, "vamos con el agente de chat de
+// Facebook"): a diferencia de WhatsApp, aquí Meta llama DIRECTO a nuestro
+// backend (sin pasar por n8n) -- la verificación de firma (X-Hub-Signature-256
+// con el App Secret) es más simple que la de WhatsApp y no hace falta una
+// capa intermedia. Mismo cerebro compartido vía handleChatMessage(), mismo
+// patrón de dedupe que whatsapp_processed/email_processed.
+app.get("/channels/facebook/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN && typeof challenge === "string") {
+    res.status(200).send(challenge);
+    return;
+  }
+  res.status(403).send("forbidden");
+});
+
+const MAX_FACEBOOK_PROCESSED_KEPT = 500;
+app.post("/channels/facebook/webhook", async (req, res) => {
+  const raw = (req as express.Request & { rawBody?: string }).rawBody ?? "";
+  if (!verifyFacebookSignature(req.header("X-Hub-Signature-256"), raw, process.env.FACEBOOK_APP_SECRET)) {
+    res.status(403).send("forbidden");
+    return;
+  }
+  // Meta espera 200 rápido para no reintentar -- se responde ya y se procesa
+  // cada mensaje real por debajo, igual que el resto de canales.
+  res.status(200).send("EVENT_RECEIVED");
+
+  const entries = Array.isArray(req.body?.entry) ? req.body.entry : [];
+  const processed = readCollection<{ key: string; at: string }>("facebook_processed");
+  const newlyProcessed: { key: string; at: string }[] = [];
+
+  for (const entry of entries) {
+    const messaging = Array.isArray(entry.messaging) ? entry.messaging : [];
+    for (const event of messaging) {
+      const psid: string | undefined = event?.sender?.id;
+      const text: string | undefined = event?.message?.text;
+      const messageId: string | undefined = event?.message?.mid;
+      if (!psid || !text || !text.trim() || event?.message?.is_echo) continue;
+
+      const dedupeKey = `${psid}|${messageId ?? text}`;
+      if (processed.some((p) => p.key === dedupeKey) || newlyProcessed.some((p) => p.key === dedupeKey)) continue;
+
+      try {
+        const result = await handleChatMessage(psid, text.trim().slice(0, 2000), "FACEBOOK", psid);
+        newlyProcessed.push({ key: dedupeKey, at: new Date().toISOString() });
+        if (isFacebookConnected()) {
+          const sent = await sendFacebookText(psid, result.reply);
+          if (!sent.ok) console.error("[facebook] no se pudo enviar la respuesta:", sent.error);
+        } else {
+          console.warn("[facebook] credenciales no conectadas -- respuesta generada pero NO enviada:", result.reply);
+        }
+      } catch (err) {
+        console.error("[facebook] inbound:", err instanceof Error ? err.message : err);
+      }
+    }
+  }
+
+  if (newlyProcessed.length > 0) {
+    writeCollection("facebook_processed", [...processed, ...newlyProcessed].slice(-MAX_FACEBOOK_PROCESSED_KEPT));
   }
 });
 

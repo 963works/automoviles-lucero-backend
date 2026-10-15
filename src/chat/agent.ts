@@ -27,7 +27,7 @@ const MAX_TURNS_KEPT = 20;
 // verificar bien antes de contestar una única vez. Chat/WhatsApp son
 // conversación en vivo -- el cliente sigue ahí, así que no hace falta tanto
 // margen (y responder antes es mejor que tardar de más).
-const MAX_TOOL_ROUNDS_BY_CHANNEL: Record<Channel, number> = { EMAIL: 10, CHAT: 6, WHATSAPP: 6 };
+const MAX_TOOL_ROUNDS_BY_CHANNEL: Record<Channel, number> = { EMAIL: 10, CHAT: 6, WHATSAPP: 6, FACEBOOK: 6 };
 const FALLBACK_REPLY = "Disculpa, ahora mismo no puedo responderte bien. Te paso con el equipo para que te atiendan en persona.";
 
 export class LlmNotConfigured extends Error {
@@ -94,12 +94,13 @@ function saveConversation(record: ConversationRecord) {
   writeCollection("chat_conversations", [...others, record]);
 }
 
-export type Channel = "CHAT" | "EMAIL" | "WHATSAPP";
+export type Channel = "CHAT" | "EMAIL" | "WHATSAPP" | "FACEBOOK";
 
 const CHANNEL_LABEL: Record<Channel, string> = {
   CHAT: "chat",
   EMAIL: "correo electrónico",
   WHATSAPP: "WhatsApp",
+  FACEBOOK: "Messenger de Facebook",
 };
 
 export async function handleChatMessage(
