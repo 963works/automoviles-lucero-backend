@@ -48,13 +48,22 @@ function llmTools(): unknown[] {
   return toolsCache!;
 }
 
-async function callLlm(messages: ChatMessage[]): Promise<{ message: ChatMessage }> {
+// forceText (FALLO REAL detectado 15/10/2026, correo real de Coches.net
+// sobre un Opel Astra): el modelo encadenó 6 rondas seguidas de solo
+// herramientas (incluyendo reintentos de get_appointment_slots sin que el
+// cliente pidiera cita) y nunca llegó a producir ni una frase de texto --
+// el cliente se quedó sin respuesta real y solo recibió el mensaje
+// genérico de fallback. En la última ronda disponible se le quita la
+// opción de llamar a otra herramienta (tool_choice:"none") para obligarlo
+// a cerrar con una respuesta de texto real, usando lo que ya averiguó.
+async function callLlm(messages: ChatMessage[], forceText = false): Promise<{ message: ChatMessage }> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new LlmNotConfigured();
+  const body: Record<string, unknown> = { model: MODEL, temperature: 0.3, messages, tools: llmTools(), tool_choice: forceText ? "none" : "auto" };
   const res = await fetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, temperature: 0.3, messages, tools: llmTools(), tool_choice: "auto" }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`llm_http_${res.status}`);
   const data = (await res.json()) as { choices: { message: ChatMessage }[] };
@@ -102,14 +111,31 @@ export async function handleChatMessage(
   await dispatchTool("create_lead", { phone: contact, channel });
   const history = trimToTurns(conversation.messages);
   const turn: ChatMessage[] = [{ role: "user", content: userText }];
-  const context = `\n\nCONTEXTO DE ESTA CONVERSACIÓN\nCanal: ${CHANNEL_LABEL[channel]}. Identificador de contacto (úsalo como phone en las herramientas): ${contact}.`;
+  // FALLO REAL detectado (15/10/2026, correo real de Coches.net sobre un
+  // Opel Astra): el modelo ignoró este identificador y usó en su lugar un
+  // correo que aparecía DENTRO del cuerpo del mensaje (el de un portal
+  // reenviando los datos de un cliente real) como "phone" en create_lead,
+  // creando una ficha de cliente duplicada y fragmentada -- y gastando
+  // turnos de herramienta de más intentando corregirlo. Regla reforzada.
+  const context = `\n\nCONTEXTO DE ESTA CONVERSACIÓN\nCanal: ${CHANNEL_LABEL[channel]}. Identificador de contacto (úsalo SIEMPRE como "phone" en todas las herramientas -- create_lead, get_customer_history, etc. -- nunca uses en su lugar un teléfono o correo que aparezca dentro del texto del mensaje, aunque sea el dato real del cliente; ese dato real va en el campo "notes" si hace falta guardarlo, pero la clave de identificación es siempre esta): ${contact}.`;
   const messages: ChatMessage[] = [{ role: "system", content: systemPrompt() + context }, ...history, ...turn];
 
   let toolRuns = 0;
   let reply: string | null = null;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS && reply === null; round++) {
-    const { message } = await callLlm(messages);
+    const isLastRound = round === MAX_TOOL_ROUNDS - 1;
+    const callInput = isLastRound
+      ? [
+          ...messages,
+          {
+            role: "system" as const,
+            content:
+              "Ya no puedes llamar a ninguna herramienta más. Responde AHORA con una frase real para el cliente, usando los datos que ya te han devuelto las herramientas anteriores en esta conversación -- nunca digas que vas a comprobar, revisar o buscar algo, eso ya no es posible en este turno.",
+          },
+        ]
+      : messages;
+    const { message } = await callLlm(callInput, isLastRound);
     messages.push(message);
     turn.push(message);
 
