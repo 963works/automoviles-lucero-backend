@@ -15,7 +15,7 @@ export type InboundEmail = {
   automated?: boolean;
 };
 
-type Processed = { key: string; at: string; outcome: string };
+type Processed = { key: string; at: string; outcome: string; threadId?: string };
 type Outbox = {
   id: string;
   to: string;
@@ -127,7 +127,15 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   // correo, aunque mencione algo de pasada relacionado con vehículos. Todo
   // lo demás se registra para revisión humana (/crm/pendientes), nunca se
   // contesta solo.
-  const priorThread = processed.some((p) => p.key.startsWith(`${email.from}|`) && p.outcome !== "automated_no_reply");
+  // FALLO REAL detectado (15/10/2026): esto comparaba por DIRECCIÓN de
+  // remitente -- pero Wallapop/Coches.net mandan TODOS sus avisos (una
+  // consulta real, un aviso de seguridad, lo que sea) desde la misma
+  // dirección genérica. En cuanto había una conversación real con esa
+  // dirección, cualquier correo futuro -- aunque fuera un aviso de cuenta
+  // sin relación ninguna -- se trataba como continuación. Ahora se compara
+  // por el hilo real de correo (threadId): solo cuenta como "hilo previo"
+  // si es literalmente el mismo hilo, nunca por compartir remitente.
+  const priorThread = Boolean(email.threadId) && processed.some((p) => p.threadId === email.threadId && p.outcome !== "automated_no_reply");
   const decision = decideInterest({
     from: email.from,
     subject: email.subject,
@@ -137,7 +145,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   });
   if (!decision.interested) {
     recordInbox(email, "automated_no_reply", { portal: portalInfo.portal });
-    writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "automated_no_reply" }].slice(-MAX_PROCESSED_KEPT));
+    writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "automated_no_reply", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
     return { outcome: "automated_no_reply" };
   }
 
@@ -155,7 +163,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   // tenga que copiarla en el portal en vez de redactarla de cero.
   if (portalInfo.mustManageOnPortal) {
     recordInbox(email, "pendiente_gestion_portal", { portal: portalInfo.portal, draftNote: body });
-    writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "pendiente_gestion_portal" }].slice(-MAX_PROCESSED_KEPT));
+    writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "pendiente_gestion_portal", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
     return { outcome: "pendiente_gestion_portal", reply: body };
   }
 
@@ -170,7 +178,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
 
   const outcome = status === "failed" ? "send_failed" : status === "sent" ? "sent" : "queued_no_google";
   recordInbox(email, outcome, { portal: portalInfo.portal });
-  writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome }].slice(-MAX_PROCESSED_KEPT));
+  writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome, threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
 
   return { outcome, reply: body, error };
 }

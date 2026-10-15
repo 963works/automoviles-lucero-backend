@@ -30,6 +30,20 @@ const BANK_OR_ADS = [
   /\b(publicidad|marketing|campa[nñ]a\s+de\s+email)\b/i,
 ];
 
+// FALLO REAL detectado (15/10/2026): el propio Wallapop mandó un aviso de
+// seguridad ("inicio de sesión desde nuevo dispositivo") con el cuerpo
+// vacío, y el agente le contestó igualmente ("No entiendo bien tu
+// mensaje...") porque esa dirección ya tenía una conversación real previa
+// (ver hasPriorThread más abajo). Nunca es un cliente preguntando por un
+// coche -- va directo a revisión humana, sin importar el remitente ni si
+// hay hilo previo.
+const SECURITY_OR_ACCOUNT = [
+  /\b(aviso\s+de\s+seguridad|alerta\s+de\s+seguridad|actividad\s+(inusual|sospechosa))\b/i,
+  /\b(inicio\s+de\s+sesi[oó]n|nuevo\s+dispositivo|nuevo\s+inicio\s+de\s+sesi[oó]n)\b/i,
+  /\b(restablec\w*\s+(tu\s+)?contrase[nñ]a|cambio\s+de\s+contrase[nñ]a|recuperar\s+contrase[nñ]a)\b/i,
+  /\b(verifica\s+tu\s+cuenta|c[oó]digo\s+de\s+verificaci[oó]n|verificaci[oó]n\s+en\s+dos\s+pasos|2fa)\b/i,
+];
+
 const INTERESTED = [
   /\b(coche|coches|veh[ií]culo|vehiculos|veh[ií]culos|furgoneta|furgonetas|todoterreno|suv|monovolumen|berlina|familiar|4x4)\b/i,
   /\b(precio|cu[aá]nto cuesta|cu[aá]nto vale|cu[aá]nto es|oferta|financ\w*|plazos|cuota)\b/i,
@@ -114,6 +128,9 @@ export function decideInterest(input: { from: string; subject: string; text: str
   }
   if (BANK_OR_ADS.some((r) => r.test(body))) {
     return { interested: false, reason: "banco_o_publicidad_prohibido" };
+  }
+  if (SECURITY_OR_ACCOUNT.some((r) => r.test(body))) {
+    return { interested: false, reason: "aviso_seguridad_o_cuenta_prohibido" };
   }
   // Decisión real del negocio (15/10/2026): el agente de correo SOLO
   // contesta automáticamente si el correo viene de Wallapop o Coches.net --
