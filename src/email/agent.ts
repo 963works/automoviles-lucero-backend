@@ -129,6 +129,7 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   // contesta solo.
   const priorThread = processed.some((p) => p.key.startsWith(`${email.from}|`) && p.outcome !== "automated_no_reply");
   const decision = decideInterest({
+    from: email.from,
     subject: email.subject,
     text: email.text,
     hasPriorThread: priorThread,

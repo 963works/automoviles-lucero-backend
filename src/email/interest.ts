@@ -7,7 +7,17 @@
 const AUTOMATED_ONLY = [
   /\b(darse de baja|baja de (la )?lista|unsubscribe|dar de baja)\b/i,
   /\b(newsletter|boletín|webinar|promoci[oó]n de (lanzamiento|oferta)|descuento exclusivo)\b/i,
+  // FALLO REAL detectado (15/10/2026): el propio Coches.net manda correos de
+  // marketing/sugerencias ("comunicacion@...coches.net", "sugerencias@...")
+  // con coches populares -- esto NO es un cliente real preguntando, es
+  // publicidad del portal, y se coló porque mencionaba modelos de coches.
+  /\b(los m[aá]s populares|no te quedes sin ellos|coches que viste|recomendados para ti|basado en tu b[uú]squeda)\b/i,
 ];
+
+// Remitentes de marketing/boletín de los propios portales (nunca un cliente
+// real detrás) -- se descarta por el remitente, sin depender de palabras
+// concretas en el cuerpo.
+const MARKETING_SENDER = /\b(comunicacion|sugerencias|newsletter|noticias|marketing)@/i;
 
 // Bancos/entidades financieras y publicidad (a petición real, 15/10/2026,
 // tras el fallo del bucle de autorespuesta): el agente de correo tiene
@@ -91,10 +101,13 @@ export function detectPortal(input: { from: string; subject: string; text: strin
 
 export type InterestDecision = { interested: boolean; reason: string };
 
-export function decideInterest(input: { subject: string; text: string; hasPriorThread: boolean; isAllowedPortal: boolean }): InterestDecision {
+export function decideInterest(input: { from: string; subject: string; text: string; hasPriorThread: boolean; isAllowedPortal: boolean }): InterestDecision {
   const body = `${input.subject}\n${input.text}`;
   if (SENSITIVE_DOCS.some((r) => r.test(body))) {
     return { interested: false, reason: "documento_sensible_revision_humana" };
+  }
+  if (MARKETING_SENDER.test(input.from)) {
+    return { interested: false, reason: "remitente_marketing_portal" };
   }
   if (AUTOMATED_ONLY.some((r) => r.test(body))) {
     return { interested: false, reason: "correo_masivo_o_baja" };
