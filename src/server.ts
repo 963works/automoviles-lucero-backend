@@ -197,6 +197,10 @@ app.get("/email/outbox", requireAdminToken, (_req, res) => {
   res.json(readCollection<unknown>("email_outbox").slice(-50));
 });
 
+app.get("/email/inbox", requireAdminToken, (_req, res) => {
+  res.json(readCollection<unknown>("email_inbox").slice(-50));
+});
+
 // Chat propio de Miguel (fuera de Retell). Lo llama el canal de WhatsApp (n8n)
 // o cualquier web que conecte el negocio. Solo con el token de admin.
 app.post("/chat/message", requireAdminToken, async (req, res) => {
