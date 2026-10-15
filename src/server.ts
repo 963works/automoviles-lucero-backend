@@ -23,7 +23,7 @@ import { handleChatMessage, LlmNotConfigured } from "./chat/agent.js";
 import { processInboundEmail } from "./email/agent.js";
 import { startEmailPoller } from "./email/poller.js";
 import { crm } from "./crm/app.js";
-import { bootstrapAdmin } from "./crm/auth.js";
+import { bootstrapAdmin, listUsers } from "./crm/auth.js";
 import { startDailySummary } from "./crm/daily.js";
 
 const app = express();
@@ -231,6 +231,10 @@ app.get("/debug/leads", requireAdminToken, (_req, res) => {
 
 app.get("/debug/appointments", requireAdminToken, (_req, res) => {
   res.json(readCollection<unknown>("appointments").slice(-100));
+});
+
+app.get("/debug/crm_users", requireAdminToken, (_req, res) => {
+  res.json(listUsers().map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, created_at: u.created_at })));
 });
 
 // Chat propio de Miguel (fuera de Retell). Lo llama el canal de WhatsApp (n8n)
