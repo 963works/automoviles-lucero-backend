@@ -478,12 +478,11 @@ function apptCard(a: Appointment): string {
   const actions = [
     a.status === "requested" ? button("Confirmar la visita", "confirmar", "ok") : "",
     a.status !== "cancelled" ? confirmButton("Cancelar la visita", "cancelar", "danger", "¿Seguro que quieres cancelar esta visita?") : "",
-    // A petición real (16/10/2026, "en la sección de visitas ponle una
-    // papelera"): la ruta /crm/citas/:id ya aceptaba "eliminar" desde hace
-    // tiempo, pero nunca se mostró el botón en la propia tarjeta -- solo se
-    // podía borrar una visita ya cancelada (misma regla de siempre, no se
-    // ha relajado), simplemente faltaba el botón para hacerlo.
-    a.status === "cancelled" ? confirmButton("Eliminar", "eliminar", "light", "¿Eliminar esta visita para siempre? Se puede restaurar luego desde la Papelera.") : "",
+    // A petición real (16/10/2026, "en esta sección quiero que añadas la
+    // papelera, para borrar consultas antiguas"): disponible siempre, no
+    // solo cuando está cancelada -- una consulta vieja pendiente de
+    // confirmar también hay que poder limpiarla sin cancelarla antes.
+    confirmButton("Eliminar", "eliminar", "light", "¿Eliminar esta visita para siempre? Se puede restaurar luego desde la Papelera."),
   ].join("");
   return `<div class="card ${tone}" id="c-${esc(a.id)}">
 <div class="when"><span>${esc(d.weekday)}</span><b>${esc(d.day)}</b><span>${esc(d.month)}</span><em>${esc(a.requested_time ?? "")}</em></div>
@@ -674,8 +673,14 @@ crm.post("/citas/:id", (req, res) => {
   const a = appts.find((x) => x.id === req.params.id);
   if (!a) return back(res, "/crm/citas", "No encuentro esa visita");
   if (accion === "eliminar") {
+    // A petición real (16/10/2026, "en esta sección quiero que añadas la
+    // papelera, para borrar consultas antiguas"): antes solo se podía
+    // eliminar una visita ya cancelada -- pero una consulta vieja sin fecha
+    // fijada (pendiente de confirmar) también hay que poder limpiarla sin
+    // tener que cancelarla primero. Se puede restaurar desde la Papelera
+    // igual que cualquier otra cosa, así que quitar esta restricción no
+    // pierde nada.
     if (me(res).role !== "admin") return back(res, "/crm/citas", "Solo el administrador puede eliminar visitas");
-    if (a.status !== "cancelled") return back(res, "/crm/citas", "Solo se pueden eliminar visitas ya canceladas");
     moveToTrash("appointments", a, `Visita: ${vehicleName(a.vehicle_id)} (${a.lead_phone ?? "sin contacto"})`, me(res).email);
     save("appointments", appts.filter((x) => x.id !== a.id));
     return back(res, "/crm/citas", "Visita movida a la papelera");
