@@ -1,4 +1,5 @@
 import express from "express";
+import multer from "multer";
 import crypto from "crypto";
 import { readCollection, writeCollection } from "../store.js";
 import { userForSession, createSession, destroySession, verifyPassword, hashPassword, listUsers, saveUsers, type CrmUser } from "./auth.js";
@@ -10,6 +11,11 @@ import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
 import { moveToTrash, listTrash, restoreFromTrash, purgeFromTrash } from "./trash.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled, isEmailAutoSendEnabled, setEmailAutoSendEnabled } from "../tools/agent-toggle.js";
+import { STUDIO_TEMPLATES, findTemplate } from "../studio/templates.js";
+import { createStudioJob, listStudioJobs, getStudioJob, pollStudioJob, saveUploadedPhoto, absolutePathFor, budgetInfo, type StudioJob } from "../studio/jobs.js";
+import { isHiggsfieldConnected } from "../studio/higgsfield.js";
+import { existsSync as fileExists } from "fs";
+import path from "path";
 import {
   googleStatus,
   googleConfigMissing,
@@ -192,6 +198,7 @@ const MENU: [string, string][] = [
   ["/crm/pendientes", "Pendientes"],
   ["/crm/clientes", "Clientes"],
   ["/crm/coches", "Coches"],
+  ["/crm/studio", "Studio IA"],
 ];
 
 function page(section: string, user: CrmUser, body: string, msg?: string): string {
@@ -449,7 +456,10 @@ crm.get("/icono.svg", (_req, res) => {
 });
 
 crm.use((req, res, next) => {
-  if (req.path === "/entrar") return next();
+  // La propia API de Higgsfield necesita descargar la foto subida desde
+  // fuera, sin cookie de sesión del CRM -- por eso esta única ruta queda
+  // pública (sirve solo archivos de coches para anuncios, nada sensible).
+  if (req.path === "/entrar" || req.path.startsWith("/studio/archivo/")) return next();
   const user = userForSession(cookieValue(req, "crm_session"));
   if (!user) {
     res.redirect("/crm/entrar");
@@ -1304,4 +1314,116 @@ crm.post("/papelera/:id", (req, res) => {
     return back(res, "/crm/papelera", "Eliminado para siempre");
   }
   back(res, "/crm/papelera", "No entendí esa acción");
+});
+
+// ---------- Lucero Studio AI (16/10/2026) ----------
+// Módulo independiente: si Higgsfield falla, no afecta a Miguel, al chat ni
+// al resto del CRM. Fotos y vídeos se suben/descargan al mismo volumen
+// persistente que el resto de datos del negocio.
+const studioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+const STUDIO_STATUS_TEXT: Record<string, string> = {
+  submitted: "Enviado, esperando a Higgsfield",
+  in_progress: "Generando…",
+  completed: "Listo",
+  failed: "Falló",
+  nsfw: "Rechazado por contenido",
+  canceled: "Cancelado",
+  rejected_budget: "No enviado: se pasaría del tope mensual",
+  rejected_concurrency: "No enviado: demasiadas generaciones a la vez, espera a que termine alguna",
+};
+
+function studioJobCard(j: StudioJob): string {
+  const template = findTemplate(j.template_id);
+  const tone = j.status === "completed" ? "done" : j.status === "submitted" || j.status === "in_progress" ? "pending" : j.status === "canceled" ? "off" : "urgent";
+  const outputs = j.output_paths
+    .map((p) =>
+      p.endsWith(".mp4")
+        ? `<video controls style="width:100%;max-width:360px;border-radius:12px;margin:6px 0" src="/crm/studio/archivo/${esc(p)}"></video>`
+        : `<img style="width:100%;max-width:360px;border-radius:12px;margin:6px 0" src="/crm/studio/archivo/${esc(p)}">`,
+    )
+    .join("");
+  return `<div class="card ${tone}"><div class="info">
+<h3>${esc(template?.label ?? j.template_id)} · ${esc(j.vehicle_label)}</h3>
+<p><span class="tag">${esc(STUDIO_STATUS_TEXT[j.status] ?? j.status)}</span><span class="tag">~${j.estimated_cost_eur.toFixed(2)} €</span></p>
+<p>Pedido por ${esc(j.created_by)} el ${esc(fmtDate(j.created_at))}</p>
+${j.error && j.status !== "completed" ? `<p>${esc(j.error)}</p>` : ""}
+${outputs}
+</div></div>`;
+}
+
+crm.get("/studio", async (req, res) => {
+  const jobs = listStudioJobs();
+  const active = jobs.filter((j) => j.status === "submitted" || j.status === "in_progress");
+  await Promise.all(active.map((j) => pollStudioJob(j.id)));
+  const fresh = listStudioJobs();
+  const budget = budgetInfo();
+
+  if (!isHiggsfieldConnected()) {
+    const body = `<h1>Studio IA</h1>
+<p class="sub">Genera vídeos e imágenes publicitarias de los coches con IA.</p>
+<div class="todo"><h2 style="margin-top:0">Falta conectar Higgsfield</h2><p>Todavía no hay una clave de API de Higgsfield puesta en el servidor. Avisa al administrador para que la añada antes de poder generar nada.</p></div>`;
+    return res.type("html").send(page("Studio IA", me(res), body, msgOf(req)));
+  }
+
+  const templateOptions = STUDIO_TEMPLATES.map(
+    (t) => `<option value="${esc(t.id)}">${esc(t.label)} — ${esc(t.description)}</option>`,
+  ).join("");
+  const vehicleOptions = currentVehicles()
+    .map((v) => `<option value="${esc(v.id)}">${esc(vehicleName(v.id))}</option>`)
+    .join("");
+
+  const body = `<h1>Studio IA</h1>
+<p class="sub">Genera vídeos e imágenes publicitarias de los coches con IA (Higgsfield). Elige una plantilla, el coche y, si hace falta, sube su foto real.</p>
+<div class="box"><p style="margin:0"><b>Gasto estimado este mes:</b> ${budget.spentEur.toFixed(2)} € de ${budget.monthlyBudgetEur} € · <b>Generando ahora:</b> ${budget.activeNow} de ${budget.maxConcurrent}</p></div>
+<div class="box">
+<form method="post" action="/crm/studio/generar" enctype="multipart/form-data">
+<label>Plantilla</label>
+<select name="template_id" required><option value="">-- elige una --</option>${templateOptions}</select>
+<label>Coche (del stock)</label>
+<select name="vehicle_id"><option value="">-- o escríbelo abajo a mano --</option>${vehicleOptions}</select>
+<label>O escribe el coche a mano (si no está en el stock)</label>
+<input name="vehicle_label_manual" placeholder="Ej: Peugeot 3008 2020">
+<label>Detalle extra (solo para "Temporada / evento": qué ambiente quieres)</label>
+<input name="extra" placeholder="Ej: Navidad, verano en la playa...">
+<label>Foto real del coche (obligatoria salvo en las plantillas que no la piden)</label>
+<input type="file" name="foto" accept="image/*">
+<button class="btn ok" type="submit">Generar</button>
+</form>
+</div>
+<h2>Encargos</h2>${fresh.length === 0 ? `<div class="empty">Todavía no has generado nada.</div>` : fresh.map(studioJobCard).join("")}`;
+  res.type("html").send(page("Studio IA", me(res), body, msgOf(req)));
+});
+
+crm.post("/studio/generar", studioUpload.single("foto"), async (req, res) => {
+  const templateId = String(req.body.template_id ?? "");
+  const template = findTemplate(templateId);
+  if (!template) return back(res, "/crm/studio", "Elige una plantilla válida");
+  const vehicleId = String(req.body.vehicle_id ?? "").trim();
+  const manual = String(req.body.vehicle_label_manual ?? "").trim();
+  const vehicleLabel = vehicleId ? vehicleName(vehicleId) : manual;
+  if (!vehicleLabel) return back(res, "/crm/studio", "Dime qué coche es: elígelo del stock o escríbelo a mano");
+  if (template.needsPhoto && !req.file) return back(res, "/crm/studio", `La plantilla "${template.label}" necesita que subas antes la foto real del coche`);
+
+  const photo = req.file ? saveUploadedPhoto(req.file.buffer, req.file.originalname) : null;
+  const extra = String(req.body.extra ?? "").trim() || undefined;
+  const result = await createStudioJob({ templateId, vehicleLabel, extra, photo, createdBy: me(res).email });
+  if (!result.ok) return back(res, "/crm/studio", `No se pudo crear el encargo: ${result.error}`);
+  if (result.job.status === "rejected_budget" || result.job.status === "rejected_concurrency" || result.job.status === "failed") {
+    return back(res, "/crm/studio", result.job.error ?? "No se pudo enviar el encargo");
+  }
+  back(res, "/crm/studio", "Encargo enviado a Higgsfield. Tardará un rato -- vuelve a esta página para ver el resultado.");
+});
+
+// Ruta pública (sin sesión, ver excepción más arriba): Higgsfield descarga
+// desde aquí la foto que se sube, y aquí mismo se ven/descargan los
+// resultados ya generados. Solo sirve archivos dentro de las dos carpetas
+// de Studio, nunca cualquier ruta del volumen de datos.
+crm.get("/studio/archivo/*", (req, res) => {
+  const rel = String((req.params as Record<string, string>)[0] ?? "");
+  const safe = path.normalize(rel);
+  if (!safe.startsWith("studio_uploads/") && !safe.startsWith("studio_outputs/")) return res.status(404).end();
+  const abs = absolutePathFor(safe);
+  if (!fileExists(abs)) return res.status(404).end();
+  res.sendFile(abs);
 });
