@@ -12,12 +12,30 @@ const AUTOMATED_ONLY = [
   // con coches populares -- esto NO es un cliente real preguntando, es
   // publicidad del portal, y se coló porque mencionaba modelos de coches.
   /\b(los m[aá]s populares|no te quedes sin ellos|coches que viste|recomendados para ti|basado en tu b[uú]squeda)\b/i,
+  // FALLO REAL detectado (16/10/2026): Coches.net también manda avisos
+  // informativos de actividad telefónica en el perfil del concesionario
+  // ("Contacto de llamada atendida/no atendida desde el perfil...") -- esto
+  // es un registro de que entró una llamada, no un cliente escribiendo un
+  // mensaje que haya que contestar. El agente le respondía "¿en qué puedo
+  // ayudarte?" a un aviso automático sin nadie al otro lado leyéndolo.
+  /\bcontacto de llamada (atendida|no atendida)\b/i,
 ];
 
 // Remitentes de marketing/boletín de los propios portales (nunca un cliente
 // real detrás) -- se descarta por el remitente, sin depender de palabras
 // concretas en el cuerpo.
 const MARKETING_SENDER = /\b(comunicacion|sugerencias|newsletter|noticias|marketing)@/i;
+
+// FALLO REAL detectado (16/10/2026, tras permitir clientes directos sin
+// portal): plataformas B2B del propio sector (subastas/renting entre
+// profesionales, nunca un cliente particular) se colaban porque sus
+// boletines van llenos de marcas/modelos reales -- coinciden con las
+// palabras de INTERESTED de pura casualidad. Autorola es una plataforma
+// real de subastas de vehículos entre concesionarios, confirmado con dos
+// respuestas reales sin sentido hoy mismo ("veo que me has enviado
+// información sobre una subasta de vehículos..."). Se descarta por dominio
+// del remitente, igual que MARKETING_SENDER.
+const B2B_INDUSTRY_SENDER = /@mail\.autorola\.es$/i;
 
 // Bancos/entidades financieras y publicidad (a petición real, 15/10/2026,
 // tras el fallo del bucle de autorespuesta): el agente de correo tiene
@@ -146,6 +164,9 @@ export function decideInterest(input: { from: string; subject: string; text: str
   }
   if (MARKETING_SENDER.test(input.from)) {
     return { interested: false, reason: "remitente_marketing_portal" };
+  }
+  if (B2B_INDUSTRY_SENDER.test(input.from)) {
+    return { interested: false, reason: "plataforma_b2b_sector_no_cliente" };
   }
   if (AUTOMATED_ONLY.some((r) => r.test(body))) {
     return { interested: false, reason: "correo_masivo_o_baja" };
