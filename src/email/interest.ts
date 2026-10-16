@@ -133,6 +133,25 @@ const PORTAL_MANAGE_ELSEWHERE = [
   /descarga\s+la\s+app/i,
 ];
 
+// FALLO REAL grave detectado (16/10/2026, revisando Pendientes del CRM):
+// coches.net reenvía peticiones de contacto SOLO por WhatsApp desde una
+// dirección de sistema sin respuesta real -- el agente las contestaba por
+// correo a esa dirección muerta, perdiendo clientes reales. Confirmado con
+// nombres y teléfonos reales (Steven, Oscar, moisés, Messi sanmartin,
+// saidelas38...) desde el 12/10/2026, nunca contactados de verdad.
+export const WHATSAPP_ONLY_REQUEST = /quiere que le contactes solo por whatsapp|nueva solicitud via whatsapp/i;
+
+// Todas las notificaciones reales de Coches.net (interés normal y la de
+// WhatsApp) incluyen al final un bloque JSON de verdad con los datos reales
+// del cliente -- más fiable que adivinar nombre/teléfono con expresiones
+// sueltas sobre el texto libre.
+export function extractCochesNetContact(text: string): { name: string | null; phone: string | null } | null {
+  const phoneMatch = /"phone":"(\d+)"/.exec(text);
+  if (!phoneMatch) return null;
+  const nameMatch = /"first_name":"([^"]*)"/.exec(text);
+  return { phone: phoneMatch[1], name: nameMatch?.[1]?.trim() || null };
+}
+
 export type PortalInfo = { portal: string | null; mustManageOnPortal: boolean };
 
 export function detectPortal(input: { from: string; subject: string; text: string }): PortalInfo {

@@ -2,9 +2,10 @@ import crypto from "crypto";
 import { readCollection, writeCollection } from "../store.js";
 import { handleChatMessage } from "../chat/agent.js";
 import { isGoogleConnected, sendGmail, googleStatus } from "../integrations/google.js";
-import { decideInterest, detectPortal } from "./interest.js";
+import { decideInterest, detectPortal, WHATSAPP_ONLY_REQUEST, extractCochesNetContact } from "./interest.js";
 import { raiseAlert } from "../alerts/alerts.js";
 import { isEmailAutoSendEnabled } from "../tools/agent-toggle.js";
+import { upsertLead } from "../tools/leads.js";
 
 export type InboundEmail = {
   messageKey: string;
@@ -112,13 +113,34 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   if (ownEmail && email.from.toLowerCase() === ownEmail.toLowerCase()) {
     return { outcome: "skipped_self_email" };
   }
-  const looksAutomated = /no-?reply|mailer-daemon|postmaster|do-?not-?reply/i.test(email.from);
-  if (email.automated || looksAutomated || !email.from.includes("@")) {
-    return { outcome: "skipped_automated" };
-  }
   const processed = readCollection<Processed>("email_processed");
   if (processed.some((p) => p.key === `${email.from}|${email.messageKey}`)) {
     return { outcome: "duplicate" };
+  }
+  // FALLO REAL grave detectado (16/10/2026): esto va ANTES del filtro de
+  // automáticos a propósito -- la dirección de origen de este tipo de aviso
+  // de Coches.net puede parecer un no-reply (o llegar recortada por el bug
+  // ya corregido), y precisamente por eso se estaba descartando en silencio
+  // un cliente real que pidió explícitamente que le contactaran por
+  // WhatsApp. Nunca se responde por correo aquí -- se registra el teléfono
+  // real (viene en el propio JSON del aviso) y queda como nota para que el
+  // equipo le escriba por WhatsApp a mano, igual que con Wallapop.
+  if (WHATSAPP_ONLY_REQUEST.test(email.text)) {
+    const contact = extractCochesNetContact(email.text);
+    if (contact?.phone) {
+      const waPhone = contact.phone.startsWith("+") ? contact.phone : `+${contact.phone}`;
+      upsertLead({ phone: waPhone, name: contact.name ?? undefined, channel: "EMAIL", notes: "Pidió explícitamente que le contacten por WhatsApp (aviso real de Coches.net)." });
+      const draftNote = `Escribirle por WhatsApp directamente (pidió que fuera SOLO por ahí): https://wa.me/${contact.phone}`;
+      recordInbox(email, "pendiente_whatsapp_manual", { portal: "Coches.net", draftNote });
+      writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "pendiente_whatsapp_manual", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
+      raiseAlert({ kind: "gestion_portal", lead_phone: waPhone, name: contact.name, reason: `Coches.net: cliente pidió contacto SOLO por WhatsApp -- escribirle a https://wa.me/${contact.phone}`, draft_note: draftNote });
+      return { outcome: "pendiente_whatsapp_manual" };
+    }
+  }
+
+  const looksAutomated = /no-?reply|mailer-daemon|postmaster|do-?not-?reply/i.test(email.from);
+  if (email.automated || looksAutomated || !email.from.includes("@")) {
+    return { outcome: "skipped_automated" };
   }
 
   const portalInfo = detectPortal({ from: email.from, subject: email.subject, text: email.text });
