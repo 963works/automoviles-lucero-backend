@@ -478,6 +478,12 @@ function apptCard(a: Appointment): string {
   const actions = [
     a.status === "requested" ? button("Confirmar la visita", "confirmar", "ok") : "",
     a.status !== "cancelled" ? confirmButton("Cancelar la visita", "cancelar", "danger", "¿Seguro que quieres cancelar esta visita?") : "",
+    // A petición real (16/10/2026, "en la sección de visitas ponle una
+    // papelera"): la ruta /crm/citas/:id ya aceptaba "eliminar" desde hace
+    // tiempo, pero nunca se mostró el botón en la propia tarjeta -- solo se
+    // podía borrar una visita ya cancelada (misma regla de siempre, no se
+    // ha relajado), simplemente faltaba el botón para hacerlo.
+    a.status === "cancelled" ? confirmButton("Eliminar", "eliminar", "light", "¿Eliminar esta visita para siempre? Se puede restaurar luego desde la Papelera.") : "",
   ].join("");
   return `<div class="card ${tone}" id="c-${esc(a.id)}">
 <div class="when"><span>${esc(d.weekday)}</span><b>${esc(d.day)}</b><span>${esc(d.month)}</span><em>${esc(a.requested_time ?? "")}</em></div>
