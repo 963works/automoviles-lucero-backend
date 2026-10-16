@@ -294,30 +294,35 @@ app.post("/channels/whatsapp/inbound", requireAdminToken, async (req, res) => {
     return;
   }
 
+  // FALLO REAL grave detectado (16/10/2026, confirmado con una llamada real de
+  // n8n y reproducido en local): esta ruta esperaba a que terminara TODO
+  // (handleChatMessage -- varias llamadas a OpenAI -- más el envío real por
+  // WhatsApp) antes de responder, ~6-8s. El proxy de EasyPanel corta la
+  // conexión antes de que termine y devuelve su propia página de "Service is
+  // not reachable" -- el código en sí funcionaba bien (confirmado en local,
+  // mismo tiempo, misma respuesta correcta), el problema era puramente el
+  // tiempo de respuesta. Mismo patrón que ya usa el webhook de Facebook:
+  // responder rápido y procesar por debajo, para que n8n/Meta no vean nunca
+  // ese timeout.
+  res.json({ ok: true, queued: true });
+
+  writeCollection(
+    "whatsapp_processed",
+    [...processed, { key: dedupeKey, at: new Date().toISOString() }].slice(-MAX_WHATSAPP_PROCESSED_KEPT),
+  );
+
   try {
     const result = await handleChatMessage(from, text, "WHATSAPP", from);
-    writeCollection(
-      "whatsapp_processed",
-      [...processed, { key: dedupeKey, at: new Date().toISOString() }].slice(-MAX_WHATSAPP_PROCESSED_KEPT),
-    );
     if (isWhatsappConnected()) {
       const sent = await sendWhatsappText(from, result.reply);
       if (!sent.ok) {
         console.error("[whatsapp] no se pudo enviar la respuesta:", sent.error);
-        res.status(502).json({ error: "whatsapp_send_failed", detail: sent.error, reply: result.reply });
-        return;
       }
     } else {
       console.warn("[whatsapp] credenciales no conectadas -- respuesta generada pero NO enviada:", result.reply);
     }
-    res.json({ ok: true, reply: result.reply, tool_runs: result.tool_runs });
   } catch (err) {
-    if (err instanceof LlmNotConfigured) {
-      res.status(503).json({ error: "llm_not_configured" });
-      return;
-    }
-    console.error("[whatsapp] inbound:", err);
-    res.status(502).json({ error: "whatsapp_processing_error" });
+    console.error("[whatsapp] inbound:", err instanceof Error ? err.message : err);
   }
 });
 
