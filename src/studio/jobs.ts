@@ -1,23 +1,23 @@
-// Ciclo de vida de los trabajos de Lucero Studio AI (16/10/2026). Mismo
-// patrón de almacenamiento que el resto del proyecto: una colección JSON
-// sobre el volumen persistente real (store.ts), nada de base de datos nueva
-// solo para esto.
+// Ciclo de vida de los trabajos de Lucero Studio AI (16/10/2026, ampliado
+// el mismo día a petición real: "que puedan elegir el tipo de vídeo... el
+// tipo de modelo... una sección para prompt manual"). Mismo patrón de
+// almacenamiento que el resto del proyecto: una colección JSON sobre el
+// volumen persistente real (store.ts), nada de base de datos nueva solo
+// para esto.
 //
 // Control de coste ANTES de llamar a Higgsfield, no después (a petición
-// explícita): tope mensual y tope de generaciones simultáneas. Los precios
-// por segundo/imagen de Higgsfield están tomados de su página pública de
-// precios (open.higgsfield.ai) para sus modelos insignia (Soul 2, Kling
-// 3.0) -- la ruta de API real confirmada para vídeo es Kling v2.5-turbo
-// (ver templates.ts), de la misma familia pero sin precio propio publicado
-// todavía, así que esta estimación es deliberadamente conservadora (al
-// alza) y solo sirve para frenar el gasto antes de tiempo, nunca como
-// factura exacta -- la factura real se revisa en el panel de Higgsfield.
+// explícita): tope mensual y tope de generaciones simultáneas. El precio
+// por segundo de vídeo varía según el motor elegido (Kling Pro cuesta más
+// que Kling estándar; Minimax no tiene precio público confirmado todavía)
+// -- la estimación de abajo es deliberadamente conservadora (al alza) y
+// solo sirve para frenar el gasto antes de tiempo, nunca como factura
+// exacta: la factura real se revisa en el panel de Higgsfield.
 import crypto from "crypto";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { readCollection, writeCollection } from "../store.js";
 import { submitHiggsfieldJob, getHiggsfieldStatus, outputUrls, isHiggsfieldConnected, type HiggsfieldStatus } from "./higgsfield.js";
-import { findTemplate, type StudioTemplate } from "./templates.js";
+import { findTemplate, findVideoEngine, findVideoStyle, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ASPECT_RATIOS, type StudioTemplate } from "./templates.js";
 
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
 const UPLOADS_DIR = path.join(DATA_DIR, "studio_uploads");
@@ -30,12 +30,18 @@ const PUBLIC_BASE_URL =
 const MONTHLY_BUDGET_EUR = Number(process.env.HIGGSFIELD_MONTHLY_BUDGET_EUR ?? 60);
 const MAX_CONCURRENT = Number(process.env.HIGGSFIELD_MAX_CONCURRENT ?? 2);
 
-// Estimación al alza, no la factura real (ver nota de arriba).
-const ESTIMATED_COST_EUR: Record<StudioTemplate["kind"], number> = {
-  image_text: 0.01,
-  video_image_to_video: 0.25,
-  video_text: 0.25,
-};
+const DEFAULT_ASPECT_RATIO = "4:3";
+const DEFAULT_ENGINE_ID = "kling_standard";
+const DEFAULT_STYLE_ID = "normal";
+
+// Estimación al alza, no la factura real (ver nota de arriba). Minimax no
+// tiene precio público confirmado -- se trata igual que Kling estándar por
+// seguridad, con el mismo margen.
+function estimateCostEur(kind: StudioTemplate["kind"], engineId: string, durationSec: number): number {
+  if (kind === "image") return 0.02;
+  const perSecond = engineId === "kling_pro" ? 0.07 : 0.05;
+  return Math.round((perSecond * durationSec + 0.02) * 100) / 100;
+}
 
 export type StudioJobStatus =
   | "submitted" // enviado a Higgsfield, esperando
@@ -52,6 +58,12 @@ export type StudioJob = {
   template_id: string;
   vehicle_label: string;
   extra: string | null;
+  manual_prompt: string | null;
+  engine_id: string | null; // solo para vídeo
+  style_id: string | null; // solo para vídeo
+  duration_sec: number | null; // solo para vídeo
+  aspect_ratio: string | null; // solo para imagen
+  final_prompt: string | null;
   photo_path: string | null; // ruta relativa dentro de DATA_DIR, o null si la plantilla no necesita foto
   status: StudioJobStatus;
   higgsfield_request_id: string | null;
@@ -120,6 +132,11 @@ export type CreateJobInput = {
   templateId: string;
   vehicleLabel: string;
   extra?: string;
+  manualPrompt?: string;
+  engineId?: string; // solo aplica a plantillas de vídeo
+  styleId?: string; // solo aplica a plantillas de vídeo
+  durationChoice?: "corta" | "larga"; // solo aplica a plantillas de vídeo
+  aspectRatio?: string; // solo aplica a plantillas de imagen
   photo?: { relPath: string; publicUrl: string } | null;
   createdBy: string;
 };
@@ -132,53 +149,98 @@ export async function createStudioJob(input: CreateJobInput): Promise<CreateJobR
   if (template.needsPhoto && !input.photo) return { ok: false, error: "esta_plantilla_necesita_foto" };
   if (!isHiggsfieldConnected()) return { ok: false, error: "higgsfield_no_conectado" };
 
-  const cost = ESTIMATED_COST_EUR[template.kind];
+  let modelPath: string;
+  let body: Record<string, unknown>;
+  let engineId: string | null = null;
+  let styleId: string | null = null;
+  let durationSec: number | null = null;
+  let aspectRatio: string | null = null;
+
+  const basePrompt = template.buildPrompt(input.vehicleLabel, input.extra);
+
+  if (template.kind === "video") {
+    const engine = findVideoEngine(input.engineId ?? DEFAULT_ENGINE_ID) ?? VIDEO_ENGINES[0];
+    const style = findVideoStyle(input.styleId ?? DEFAULT_STYLE_ID) ?? VIDEO_STYLES[0];
+    engineId = engine.id;
+    styleId = style.id;
+    durationSec = input.durationChoice === "larga" ? engine.durations[1] : engine.durations[0];
+
+    const path_ = input.photo ? engine.imageToVideoPath : engine.textToVideoPath;
+    if (!path_) return { ok: false, error: `el_motor_${engine.id}_no_ofrece_texto_a_video` };
+    modelPath = path_;
+
+    const finalPrompt = [basePrompt, style.promptSuffix, input.manualPrompt?.trim()].filter(Boolean).join(". ");
+    body = { prompt: finalPrompt, duration: durationSec };
+    if (input.photo) body.image_url = input.photo.publicUrl;
+    if (engine.supportsCfgScale) body.cfg_scale = style.cfgScale;
+
+    const cost = estimateCostEur(template.kind, engine.id, durationSec);
+    if (monthSpendEur() + cost > MONTHLY_BUDGET_EUR) {
+      return makeRejected(input, template, cost, "rejected_budget", `Se pararía el gasto mensual estimado (tope ${MONTHLY_BUDGET_EUR} €). Pide que se amplíe el tope si quieres seguir generando este mes.`, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
+    }
+    if (activeJobCount() >= MAX_CONCURRENT) {
+      return makeRejected(input, template, cost, "rejected_concurrency", `Ya hay ${MAX_CONCURRENT} generaciones en marcha a la vez. Espera a que termine alguna antes de lanzar otra.`, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
+    }
+    return submitAndSave(input, template, modelPath, body, cost, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
+  }
+
+  // imagen
+  aspectRatio = IMAGE_ASPECT_RATIOS.some((r) => r.id === input.aspectRatio) ? input.aspectRatio! : DEFAULT_ASPECT_RATIO;
+  const finalPrompt = [basePrompt, input.manualPrompt?.trim()].filter(Boolean).join(". ");
+  modelPath = "higgsfield-ai/soul/v2/standard";
+  body = { prompt: finalPrompt, aspect_ratio: aspectRatio };
+  const cost = estimateCostEur(template.kind, "soul", 0);
   if (monthSpendEur() + cost > MONTHLY_BUDGET_EUR) {
-    return makeRejected(input, template, cost, "rejected_budget", `Se pararía el gasto mensual estimado (tope ${MONTHLY_BUDGET_EUR} €). Pide que se amplíe el tope si quieres seguir generando este mes.`);
+    return makeRejected(input, template, cost, "rejected_budget", `Se pararía el gasto mensual estimado (tope ${MONTHLY_BUDGET_EUR} €). Pide que se amplíe el tope si quieres seguir generando este mes.`, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
   }
   if (activeJobCount() >= MAX_CONCURRENT) {
-    return makeRejected(input, template, cost, "rejected_concurrency", `Ya hay ${MAX_CONCURRENT} generaciones en marcha a la vez. Espera a que termine alguna antes de lanzar otra.`);
+    return makeRejected(input, template, cost, "rejected_concurrency", `Ya hay ${MAX_CONCURRENT} generaciones en marcha a la vez. Espera a que termine alguna antes de lanzar otra.`, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
   }
+  return submitAndSave(input, template, modelPath, body, cost, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
+}
 
-  const prompt = template.buildPrompt(input.vehicleLabel, input.extra);
-  const body: Record<string, unknown> =
-    template.kind === "image_text" ? { prompt } : input.photo ? { prompt, image_url: input.photo.publicUrl } : { prompt };
+type JobExtras = { engineId: string | null; styleId: string | null; durationSec: number | null; aspectRatio: string | null; finalPrompt: string };
 
-  const submitted = await submitHiggsfieldJob(template.modelPath, body);
-  const job: StudioJob = {
+function baseJobFields(input: CreateJobInput, template: StudioTemplate, cost: number, extras: JobExtras) {
+  const nowIso = now();
+  return {
     id: crypto.randomUUID(),
     template_id: template.id,
     vehicle_label: input.vehicleLabel,
     extra: input.extra ?? null,
+    manual_prompt: input.manualPrompt?.trim() || null,
+    engine_id: extras.engineId,
+    style_id: extras.styleId,
+    duration_sec: extras.durationSec,
+    aspect_ratio: extras.aspectRatio,
+    final_prompt: extras.finalPrompt,
     photo_path: input.photo?.relPath ?? null,
-    status: submitted.ok ? "submitted" : "failed",
-    higgsfield_request_id: submitted.ok ? submitted.state.request_id : null,
-    output_paths: [],
-    error: submitted.ok ? null : submitted.error,
+    output_paths: [] as string[],
     estimated_cost_eur: cost,
     created_by: input.createdBy,
-    created_at: now(),
-    updated_at: now(),
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
+async function submitAndSave(input: CreateJobInput, template: StudioTemplate, modelPath: string, body: Record<string, unknown>, cost: number, extras: JobExtras): Promise<CreateJobResult> {
+  const submitted = await submitHiggsfieldJob(modelPath, body);
+  const job: StudioJob = {
+    ...baseJobFields(input, template, cost, extras),
+    status: submitted.ok ? "submitted" : "failed",
+    higgsfield_request_id: submitted.ok ? submitted.state.request_id : null,
+    error: submitted.ok ? null : submitted.error,
   };
   save([...list(), job]);
   return { ok: true, job };
 }
 
-function makeRejected(input: CreateJobInput, template: StudioTemplate, cost: number, status: StudioJobStatus, error: string): CreateJobResult {
+function makeRejected(input: CreateJobInput, template: StudioTemplate, cost: number, status: StudioJobStatus, error: string, extras: JobExtras): CreateJobResult {
   const job: StudioJob = {
-    id: crypto.randomUUID(),
-    template_id: template.id,
-    vehicle_label: input.vehicleLabel,
-    extra: input.extra ?? null,
-    photo_path: input.photo?.relPath ?? null,
+    ...baseJobFields(input, template, cost, extras),
     status,
     higgsfield_request_id: null,
-    output_paths: [],
     error,
-    estimated_cost_eur: cost,
-    created_by: input.createdBy,
-    created_at: now(),
-    updated_at: now(),
   };
   save([...list(), job]);
   return { ok: true, job };

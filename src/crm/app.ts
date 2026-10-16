@@ -11,7 +11,7 @@ import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
 import { moveToTrash, listTrash, restoreFromTrash, purgeFromTrash } from "./trash.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled, isEmailAutoSendEnabled, setEmailAutoSendEnabled } from "../tools/agent-toggle.js";
-import { STUDIO_TEMPLATES, findTemplate } from "../studio/templates.js";
+import { STUDIO_TEMPLATES, findTemplate, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ASPECT_RATIOS, findVideoEngine, findVideoStyle } from "../studio/templates.js";
 import { createStudioJob, listStudioJobs, getStudioJob, pollStudioJob, saveUploadedPhoto, absolutePathFor, budgetInfo, type StudioJob } from "../studio/jobs.js";
 import { isHiggsfieldConnected } from "../studio/higgsfield.js";
 import { existsSync as fileExists } from "fs";
@@ -1343,10 +1343,19 @@ function studioJobCard(j: StudioJob): string {
         : `<img style="width:100%;max-width:360px;border-radius:12px;margin:6px 0" src="/crm/studio/archivo/${esc(p)}">`,
     )
     .join("");
+  const engine = j.engine_id ? findVideoEngine(j.engine_id) : undefined;
+  const style = j.style_id ? findVideoStyle(j.style_id) : undefined;
+  const detailTags = [
+    engine ? `<span class="tag">${esc(engine.label.split(" — ")[0])}</span>` : "",
+    style ? `<span class="tag">${esc(style.label.split(" — ")[0])}</span>` : "",
+    j.duration_sec ? `<span class="tag">${j.duration_sec}s</span>` : "",
+    j.aspect_ratio ? `<span class="tag">${esc(j.aspect_ratio)}</span>` : "",
+  ].join("");
   return `<div class="card ${tone}"><div class="info">
 <h3>${esc(template?.label ?? j.template_id)} · ${esc(j.vehicle_label)}</h3>
-<p><span class="tag">${esc(STUDIO_STATUS_TEXT[j.status] ?? j.status)}</span><span class="tag">~${j.estimated_cost_eur.toFixed(2)} €</span></p>
+<p><span class="tag">${esc(STUDIO_STATUS_TEXT[j.status] ?? j.status)}</span><span class="tag">~${j.estimated_cost_eur.toFixed(2)} €</span>${detailTags}</p>
 <p>Pedido por ${esc(j.created_by)} el ${esc(fmtDate(j.created_at))}</p>
+${j.manual_prompt ? `<p>Pedido extra: "${esc(j.manual_prompt)}"</p>` : ""}
 ${j.error && j.status !== "completed" ? `<p>${esc(j.error)}</p>` : ""}
 ${outputs}
 </div></div>`;
@@ -1372,6 +1381,9 @@ crm.get("/studio", async (req, res) => {
   const vehicleOptions = currentVehicles()
     .map((v) => `<option value="${esc(v.id)}">${esc(vehicleName(v.id))}</option>`)
     .join("");
+  const engineOptions = VIDEO_ENGINES.map((e) => `<option value="${esc(e.id)}">${esc(e.label)}</option>`).join("");
+  const styleOptions = VIDEO_STYLES.map((s) => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join("");
+  const aspectOptions = IMAGE_ASPECT_RATIOS.map((r) => `<option value="${esc(r.id)}">${esc(r.label)}</option>`).join("");
 
   const body = `<h1>Studio IA</h1>
 <p class="sub">Genera vídeos e imágenes publicitarias de los coches con IA (Higgsfield). Elige una plantilla, el coche y, si hace falta, sube su foto real.</p>
@@ -1388,6 +1400,16 @@ crm.get("/studio", async (req, res) => {
 <input name="extra" placeholder="Ej: Navidad, verano en la playa...">
 <label>Foto real del coche (obligatoria salvo en las plantillas que no la piden)</label>
 <input type="file" name="foto" accept="image/*">
+<div class="row">
+<div><label>Motor de vídeo (solo plantillas de vídeo)</label><select name="engine_id">${engineOptions}</select></div>
+<div><label>Estilo (solo plantillas de vídeo)</label><select name="style_id">${styleOptions}</select></div>
+</div>
+<div class="row">
+<div><label>Duración del vídeo (solo plantillas de vídeo)</label><select name="duration_choice"><option value="corta">Corta</option><option value="larga">Larga</option></select></div>
+<div><label>Formato de imagen (solo plantillas de imagen)</label><select name="aspect_ratio">${aspectOptions}</select></div>
+</div>
+<label>¿Algo más en concreto que quieras pedir? (opcional -- se añade a lo que ya genera la plantilla, no lo sustituye)</label>
+<textarea name="manual_prompt" rows="3" placeholder="Ej: que el cielo esté nublado, que la cámara empiece desde más abajo..."></textarea>
 <button class="btn ok" type="submit">Generar</button>
 </form>
 </div>
@@ -1407,7 +1429,12 @@ crm.post("/studio/generar", studioUpload.single("foto"), async (req, res) => {
 
   const photo = req.file ? saveUploadedPhoto(req.file.buffer, req.file.originalname) : null;
   const extra = String(req.body.extra ?? "").trim() || undefined;
-  const result = await createStudioJob({ templateId, vehicleLabel, extra, photo, createdBy: me(res).email });
+  const manualPrompt = String(req.body.manual_prompt ?? "").trim() || undefined;
+  const engineId = String(req.body.engine_id ?? "").trim() || undefined;
+  const styleId = String(req.body.style_id ?? "").trim() || undefined;
+  const durationChoice = req.body.duration_choice === "larga" ? "larga" : "corta";
+  const aspectRatio = String(req.body.aspect_ratio ?? "").trim() || undefined;
+  const result = await createStudioJob({ templateId, vehicleLabel, extra, manualPrompt, engineId, styleId, durationChoice, aspectRatio, photo, createdBy: me(res).email });
   if (!result.ok) return back(res, "/crm/studio", `No se pudo crear el encargo: ${result.error}`);
   if (result.job.status === "rejected_budget" || result.job.status === "rejected_concurrency" || result.job.status === "failed") {
     return back(res, "/crm/studio", result.job.error ?? "No se pudo enviar el encargo");
