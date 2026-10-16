@@ -482,7 +482,7 @@ function apptCard(a: Appointment): string {
     // papelera, para borrar consultas antiguas"): disponible siempre, no
     // solo cuando está cancelada -- una consulta vieja pendiente de
     // confirmar también hay que poder limpiarla sin cancelarla antes.
-    confirmButton("Eliminar", "eliminar", "light", "¿Eliminar esta visita para siempre? Se puede restaurar luego desde la Papelera."),
+    confirmButton("🗑️", "eliminar", "light", "¿Eliminar esta visita para siempre? Se puede restaurar luego desde la Papelera."),
   ].join("");
   return `<div class="card ${tone}" id="c-${esc(a.id)}">
 <div class="when"><span>${esc(d.weekday)}</span><b>${esc(d.day)}</b><span>${esc(d.month)}</span><em>${esc(a.requested_time ?? "")}</em></div>
