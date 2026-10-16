@@ -144,9 +144,16 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
         vehicle_interest: vehicleLabel || undefined,
         notes: "Pidió explícitamente que le contacten por WhatsApp (aviso real de Coches.net).",
       });
-      const userText = contact.inquiry
-        ? `${contact.inquiry}${vehicleLabel ? ` (${vehicleLabel})` : ""}`
-        : `Me interesa este vehículo: ${vehicleLabel || "sin especificar"}.`;
+      // A petición real (16/10/2026, "que también le diga el coche por el
+      // cual le estamos escribiendo"): este es un contacto que iniciamos
+      // nosotros (el cliente no ha escrito nada todavía en esta conversación
+      // de WhatsApp) -- si el vehículo queda solo como nota al margen, el
+      // modelo puede confirmarlo sin nombrarlo ("sí, lo tenemos disponible")
+      // y el cliente no sabe de qué coche se habla. Se deja clarísimo como
+      // el dato central, no como apunte.
+      const userText = vehicleLabel
+        ? `Hola, escribí en Coches.net preguntando por este vehículo: ${vehicleLabel}.${contact.inquiry ? ` ${contact.inquiry}` : ""}`
+        : contact.inquiry || "Me interesa un vehículo, pero no se especificó cuál.";
       const { reply } = await handleChatMessage(waPhone, userText, "WHATSAPP", waPhone);
       const sent = isWhatsappConnected() ? await sendWhatsappText(waPhone, reply) : { ok: false as const, error: "whatsapp_not_connected" };
 
