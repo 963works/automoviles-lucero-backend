@@ -6,6 +6,7 @@ import { decideInterest, detectPortal, WHATSAPP_ONLY_REQUEST, extractCochesNetCo
 import { raiseAlert } from "../alerts/alerts.js";
 import { isEmailAutoSendEnabled } from "../tools/agent-toggle.js";
 import { upsertLead } from "../tools/leads.js";
+import { sendWhatsappText, isWhatsappConnected } from "../integrations/whatsapp.js";
 
 export type InboundEmail = {
   messageKey: string;
@@ -122,18 +123,43 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   // de Coches.net puede parecer un no-reply (o llegar recortada por el bug
   // ya corregido), y precisamente por eso se estaba descartando en silencio
   // un cliente real que pidió explícitamente que le contactaran por
-  // WhatsApp. Nunca se responde por correo aquí -- se registra el teléfono
-  // real (viene en el propio JSON del aviso) y queda como nota para que el
-  // equipo le escriba por WhatsApp a mano, igual que con Wallapop.
+  // WhatsApp. Nunca se responde por CORREO aquí -- se registra el teléfono
+  // real (viene en el propio JSON del aviso) y, a petición real (16/10/2026,
+  // "que el agente de Gmail coja el número y conectado con el agente de
+  // WhatsApp, se le envíe un mensaje en automático"), se intenta mandarle un
+  // WhatsApp real de verdad con el mismo cerebro que cualquier otro canal.
+  // Si el envío real falla (hoy: WhatsApp todavía no está conectado de
+  // verdad, número sin verificar -- ver integrations/whatsapp.ts), cae en el
+  // mismo aviso manual de siempre para el equipo, pero ya con la respuesta
+  // redactada lista para copiar, en vez de una nota en blanco.
   if (WHATSAPP_ONLY_REQUEST.test(email.text)) {
     const contact = extractCochesNetContact(email.text);
     if (contact?.phone) {
       const waPhone = contact.phone.startsWith("+") ? contact.phone : `+${contact.phone}`;
-      upsertLead({ phone: waPhone, name: contact.name ?? undefined, channel: "EMAIL", notes: "Pidió explícitamente que le contacten por WhatsApp (aviso real de Coches.net)." });
-      const draftNote = `Escribirle por WhatsApp directamente (pidió que fuera SOLO por ahí): https://wa.me/${contact.phone}`;
+      const vehicleLabel = [contact.make, contact.model, contact.version].filter(Boolean).join(" ");
+      upsertLead({
+        phone: waPhone,
+        name: contact.name ?? undefined,
+        channel: "WHATSAPP",
+        vehicle_interest: vehicleLabel || undefined,
+        notes: "Pidió explícitamente que le contacten por WhatsApp (aviso real de Coches.net).",
+      });
+      const userText = contact.inquiry
+        ? `${contact.inquiry}${vehicleLabel ? ` (${vehicleLabel})` : ""}`
+        : `Me interesa este vehículo: ${vehicleLabel || "sin especificar"}.`;
+      const { reply } = await handleChatMessage(waPhone, userText, "WHATSAPP", waPhone);
+      const sent = isWhatsappConnected() ? await sendWhatsappText(waPhone, reply) : { ok: false as const, error: "whatsapp_not_connected" };
+
+      if (sent.ok) {
+        recordInbox(email, "sent_whatsapp_automatico", { portal: "Coches.net" });
+        writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "sent_whatsapp_automatico", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
+        return { outcome: "sent_whatsapp_automatico", reply };
+      }
+
+      const draftNote = `El envío automático por WhatsApp falló (${sent.error}) -- escribirle a mano: https://wa.me/${contact.phone}\n\nRespuesta ya redactada, lista para copiar:\n${reply}`;
       recordInbox(email, "pendiente_whatsapp_manual", { portal: "Coches.net", draftNote });
       writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "pendiente_whatsapp_manual", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
-      raiseAlert({ kind: "gestion_portal", lead_phone: waPhone, name: contact.name, reason: `Coches.net: cliente pidió contacto SOLO por WhatsApp -- escribirle a https://wa.me/${contact.phone}`, draft_note: draftNote });
+      raiseAlert({ kind: "gestion_portal", lead_phone: waPhone, name: contact.name, reason: `Coches.net: cliente pidió contacto SOLO por WhatsApp -- el envío automático falló (${sent.error}), escribirle a https://wa.me/${contact.phone}`, draft_note: draftNote });
       return { outcome: "pendiente_whatsapp_manual" };
     }
   }

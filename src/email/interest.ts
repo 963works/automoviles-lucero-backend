@@ -145,11 +145,27 @@ export const WHATSAPP_ONLY_REQUEST = /quiere que le contactes solo por whatsapp|
 // WhatsApp) incluyen al final un bloque JSON de verdad con los datos reales
 // del cliente -- más fiable que adivinar nombre/teléfono con expresiones
 // sueltas sobre el texto libre.
-export function extractCochesNetContact(text: string): { name: string | null; phone: string | null } | null {
+export function extractCochesNetContact(
+  text: string,
+): { name: string | null; phone: string | null; make: string | null; model: string | null; version: string | null; inquiry: string | null } | null {
   const phoneMatch = /"phone":"(\d+)"/.exec(text);
   if (!phoneMatch) return null;
   const nameMatch = /"first_name":"([^"]*)"/.exec(text);
-  return { phone: phoneMatch[1], name: nameMatch?.[1]?.trim() || null };
+  const makeMatch = /"make":"([^"]*)"/.exec(text);
+  const modelMatch = /"model":"([^"]*)"/.exec(text);
+  const versionMatch = /"version":\s*"([^"]*)"/.exec(text);
+  // El mensaje real del cliente va entre "quiere que le contactes solo por
+  // WhatsApp" y el aviso "**Recuerda utilizar..." -- se usa tal cual como
+  // primer mensaje real para el agente de chat, en vez de inventar uno.
+  const inquiryMatch = /quiere que le contactes solo por whatsapp\s*\n+\s*(.+?)\n+\s*\*\*recuerda/is.exec(text);
+  return {
+    phone: phoneMatch[1],
+    name: nameMatch?.[1]?.trim() || null,
+    make: makeMatch?.[1]?.trim() || null,
+    model: modelMatch?.[1]?.trim() || null,
+    version: versionMatch?.[1]?.trim() || null,
+    inquiry: inquiryMatch?.[1]?.trim() || null,
+  };
 }
 
 export type PortalInfo = { portal: string | null; mustManageOnPortal: boolean };
