@@ -198,13 +198,16 @@ const MENU: [string, string][] = [
   ["/crm/pendientes", "Pendientes"],
   ["/crm/clientes", "Clientes"],
   ["/crm/coches", "Coches"],
-  ["/crm/studio", "Studio IA"],
 ];
 
 function page(section: string, user: CrmUser, body: string, msg?: string): string {
+  // Studio IA gasta dinero real en cada generación (16-17/10/2026) -- a
+  // petición real ("a esa seccion, solo puedo acceder yo y el correo de
+  // automoviles lucero o administradores") queda reservada a admins, igual
+  // que Papelera/Integraciones/Equipo.
   const menu: [string, string][] = [
     ...MENU,
-    ...(user.role === "admin" ? ([["/crm/papelera", "Papelera"], ["/crm/integraciones", "Integraciones"], ["/crm/equipo", "Equipo"]] as [string, string][]) : []),
+    ...(user.role === "admin" ? ([["/crm/studio", "Studio IA"], ["/crm/papelera", "Papelera"], ["/crm/integraciones", "Integraciones"], ["/crm/equipo", "Equipo"]] as [string, string][]) : []),
   ];
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(section)} · Lucero</title>
@@ -1413,6 +1416,7 @@ ${outputs}
 }
 
 crm.get("/studio", async (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm", "Esta sección es solo para administradores");
   const jobs = listStudioJobs();
   const active = jobs.filter((j) => j.status === "submitted" || j.status === "in_progress");
   await Promise.all(active.map((j) => pollStudioJob(j.id)));
@@ -1512,6 +1516,7 @@ crm.get("/studio", async (req, res) => {
 });
 
 crm.post("/studio/generar", studioUpload.single("foto"), async (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm", "Esta sección es solo para administradores");
   const templateId = String(req.body.template_id ?? "");
   const template = findTemplate(templateId);
   if (!template) return back(res, "/crm/studio", "Elige una plantilla válida");
