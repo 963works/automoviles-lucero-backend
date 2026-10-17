@@ -22,6 +22,7 @@ export type StudioTemplate = {
   id: string;
   label: string;
   description: string;
+  icon: string;
   kind: StudioKind;
   needsPhoto: boolean;
   // Nota real de riesgo heredada de la investigación (algunos modelos de
@@ -38,6 +39,8 @@ const BASE_STYLE =
 export type VideoEngine = {
   id: string;
   label: string;
+  icon: string;
+  description: string;
   imageToVideoPath: string;
   textToVideoPath: string | null; // null = este motor/nivel no ofrece texto-a-vídeo
   durations: [number, number]; // [corta, larga], en segundos -- valores reales que acepta la API
@@ -47,7 +50,9 @@ export type VideoEngine = {
 export const VIDEO_ENGINES: VideoEngine[] = [
   {
     id: "kling_standard",
-    label: "Kling estándar — el más rápido y económico",
+    label: "Kling estándar",
+    icon: "⚡",
+    description: "El más rápido y económico",
     imageToVideoPath: "kling-video/v2.5-turbo/standard/image-to-video",
     textToVideoPath: null,
     durations: [5, 10],
@@ -55,7 +60,9 @@ export const VIDEO_ENGINES: VideoEngine[] = [
   },
   {
     id: "kling_pro",
-    label: "Kling Pro — más calidad de imagen, cuesta más",
+    label: "Kling Pro",
+    icon: "💎",
+    description: "Más calidad de imagen, cuesta más",
     imageToVideoPath: "kling-video/v2.5-turbo/pro/image-to-video",
     textToVideoPath: "kling-video/v2.5-turbo/pro/text-to-video",
     durations: [5, 10],
@@ -63,7 +70,9 @@ export const VIDEO_ENGINES: VideoEngine[] = [
   },
   {
     id: "minimax",
-    label: "Minimax Hailuo — otro motor, movimiento distinto",
+    label: "Minimax Hailuo",
+    icon: "🌊",
+    description: "Otro motor, movimiento distinto",
     imageToVideoPath: "minimax/hailuo-2.3/standard/image-to-video",
     textToVideoPath: "minimax/hailuo-2.3/standard/text-to-video",
     durations: [6, 10],
@@ -80,17 +89,21 @@ export function findVideoEngine(id: string): VideoEngine | undefined {
 // ciñe literalmente a lo que se le pide). No existe un parámetro "style"
 // real en la API: esto es la forma honesta de aproximarlo con lo que sí
 // existe de verdad.
-export type VideoStyle = { id: string; label: string; promptSuffix: string; cfgScale: number };
+export type VideoStyle = { id: string; label: string; icon: string; description: string; promptSuffix: string; cfgScale: number };
 export const VIDEO_STYLES: VideoStyle[] = [
   {
     id: "normal",
-    label: "Normal — anuncio limpio y directo",
+    label: "Normal",
+    icon: "📋",
+    description: "Anuncio limpio y directo",
     promptSuffix: "estilo anuncio de concesionario limpio y directo, iluminación natural de día",
     cfgScale: 0.65,
   },
   {
     id: "cinematico",
-    label: "Cinematográfico — más dramático, cámara elegante",
+    label: "Cinematográfico",
+    icon: "🎬",
+    description: "Más dramático, cámara elegante",
     promptSuffix: "estilo cinematográfico, iluminación dramática con contraste, movimiento de cámara suave y elegante, sensación de spot publicitario de alta gama",
     cfgScale: 0.35,
   },
@@ -101,12 +114,12 @@ export function findVideoStyle(id: string): VideoStyle | undefined {
 }
 
 // ---------- relación de aspecto de imagen (confirmada en el openapi.json: enum real de Soul) ----------
-export const IMAGE_ASPECT_RATIOS: { id: string; label: string }[] = [
-  { id: "4:3", label: "Horizontal clásico (4:3)" },
-  { id: "16:9", label: "Horizontal ancho (16:9) — web, Facebook" },
-  { id: "1:1", label: "Cuadrado (1:1) — feed de Instagram" },
-  { id: "9:16", label: "Vertical (9:16) — Stories, Reels, TikTok" },
-  { id: "3:4", label: "Vertical clásico (3:4)" },
+export const IMAGE_ASPECT_RATIOS: { id: string; label: string; icon: string }[] = [
+  { id: "4:3", label: "Horizontal clásico (4:3)", icon: "▭" },
+  { id: "16:9", label: "Horizontal ancho — web, Facebook", icon: "🖥️" },
+  { id: "1:1", label: "Cuadrado — feed de Instagram", icon: "◻️" },
+  { id: "9:16", label: "Vertical — Stories, Reels, TikTok", icon: "📱" },
+  { id: "3:4", label: "Vertical clásico (3:4)", icon: "▯" },
 ];
 
 export const STUDIO_TEMPLATES: StudioTemplate[] = [
@@ -114,6 +127,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "llegada",
     label: "Ha llegado",
     description: "Primer post cuando entra un coche al stock -- la cámara gira despacio alrededor del vehículo.",
+    icon: "🚘",
     kind: "video",
     needsPhoto: true,
     buildPrompt: (v) => `${BASE_STYLE}. Vídeo publicitario de "ha llegado": la cámara gira lento 360° alrededor del ${v}, mostrando el coche entero con orgullo, como el primer vistazo a un coche recién llegado al concesionario.`,
@@ -122,6 +136,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "paseo-exterior",
     label: "Paseo exterior",
     description: "Barrido lateral cinematográfico del coche en el patio o la calle.",
+    icon: "🎥",
     kind: "video",
     needsPhoto: true,
     buildPrompt: (v) => `${BASE_STYLE}. Vídeo cinematográfico: la cámara se desplaza lateralmente, despacio, a lo largo del ${v} parado, destacando la carrocería y la silueta del vehículo.`,
@@ -130,6 +145,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "detalle-interior",
     label: "Detalle interior",
     description: "Plano cercano deslizante sobre salpicadero, asientos y volante.",
+    icon: "🔍",
     kind: "video",
     needsPhoto: true,
     warning: "Evita que la matrícula o el logo queden en primer plano -- en un recorte muy cercano pueden perder nitidez.",
@@ -139,6 +155,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "oferta-flash",
     label: "Oferta flash",
     description: "Zoom dinámico sobre el coche, con espacio limpio arriba y abajo para añadir el precio después, a mano.",
+    icon: "⚡",
     kind: "video",
     needsPhoto: true,
     buildPrompt: (v) => `${BASE_STYLE}. Vídeo corto y dinámico con zoom de entrada hacia el ${v}, deja espacio limpio arriba y abajo de la imagen sin texto -- el precio se añadirá después, a mano, en edición.`,
@@ -147,6 +164,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "lifestyle",
     label: "Lifestyle en movimiento",
     description: "El coche circulando por una calle o autovía, para dar sensación de uso real.",
+    icon: "🛣️",
     kind: "video",
     needsPhoto: true,
     buildPrompt: (v) => `${BASE_STYLE}. Vídeo de estilo de vida: el ${v} circulando con suavidad por una calle urbana o una autovía despejada, luz de día, sensación de libertad y uso real.`,
@@ -155,6 +173,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "coche-semana",
     label: "Coche de la semana",
     description: "Plantilla fija semanal con fondo de marca Lucero, para dar ritmo a redes sociales.",
+    icon: "⭐",
     kind: "image",
     needsPhoto: false,
     buildPrompt: (v) => `${BASE_STYLE}. Imagen publicitaria de "coche de la semana" para Automóviles Lucero: un ${v} en un fondo de concesionario limpio y profesional, espacio libre arriba para añadir el texto "Coche de la semana" después, en edición.`,
@@ -163,6 +182,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "temporada",
     label: "Temporada / evento",
     description: "El mismo coche con ambiente estacional (Navidad, verano, vuelta al cole...).",
+    icon: "🎄",
     kind: "image",
     needsPhoto: false,
     warning: "Esta plantilla genera la imagen entera a partir de texto -- el coche resultante es una recreación, no la foto real del vehículo. Úsala solo para ambiente, nunca para mostrarlo como \"el coche exacto en venta\".",
@@ -172,6 +192,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "educativo",
     label: "Vídeo corto educativo",
     description: "Plano fijo del coche con idea de texto superpuesto tipo \"3 cosas a mirar antes de comprar\" (el texto se añade después, en edición).",
+    icon: "🎓",
     kind: "video",
     needsPhoto: true,
     buildPrompt: (v) => `${BASE_STYLE}. Vídeo de plano fijo, estable, del ${v} completo, bien iluminado, sin movimiento brusco de cámara -- pensado para añadir texto educativo encima después, en edición.`,
@@ -180,6 +201,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "comparativa",
     label: "Comparativa de dos modelos",
     description: "Imagen con dos fotos lado a lado para \"¿cuál te pega más?\" -- sube primero la foto del coche A, genera, y repite con el coche B; el montaje final de las dos se hace en edición.",
+    icon: "⚖️",
     kind: "image",
     needsPhoto: false,
     buildPrompt: (v) => `${BASE_STYLE}. Imagen publicitaria de un ${v} solo, en fondo neutro de concesionario, pensada para montarse después junto a la foto de otro coche en una comparativa "¿cuál te pega más?".`,
@@ -188,6 +210,7 @@ export const STUDIO_TEMPLATES: StudioTemplate[] = [
     id: "antes-despues",
     label: "Antes / después del reacondicionado",
     description: "Para cuando el equipo limpia y prepara el coche antes de publicarlo -- genera solo la versión \"después\"; el \"antes\" es la foto real tal cual llegó.",
+    icon: "✨",
     kind: "image",
     needsPhoto: false,
     buildPrompt: (v) => `${BASE_STYLE}. Imagen del "después": un ${v} recién preparado y reluciente, listo para la venta, en el patio del concesionario, luz de día.`,
