@@ -223,7 +223,7 @@ h1{font-size:34px;margin:6px 0 4px}
 h2{font-size:24px;margin:22px 0 10px}
 .sub{color:#4b5563;margin:0 0 16px;font-size:20px}
 .msg{background:#e3f6e8;border:3px solid #2e9e55;padding:14px 18px;border-radius:14px;margin-bottom:16px;font-size:21px;font-weight:600}
-.card{background:#fff;border-radius:16px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;gap:16px;flex-wrap:wrap}
+.card{background:#fff;border-radius:16px;padding:18px 20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;gap:16px;flex-wrap:wrap;position:relative}
 .card .info{flex:1;min-width:220px}
 .card h3{margin:0 0 6px;font-size:23px}
 .card p{margin:4px 0;font-size:20px}
@@ -256,17 +256,42 @@ label{font-size:20px;font-weight:700}
 .legend{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
 a.link{color:#1d4ed8;font-weight:700;font-size:20px}
 .search{display:flex;gap:10px;margin:0 0 16px}.search input{margin:0}
-.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin:0 0 18px}
-.pick-card{display:flex;flex-direction:column;gap:4px;background:#fff;border:3px solid #e4e7ec;border-radius:16px;padding:14px;cursor:pointer;position:relative;transition:border-color .1s}
+.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin:0 0 20px}
+.pick-grid.compact{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.pick-card{display:flex;flex-direction:column;gap:6px;background:#fff;border:3px solid #e4e7ec;border-radius:16px;padding:14px;cursor:pointer;position:relative;transition:border-color .12s,transform .12s,box-shadow .12s}
 .pick-card input{position:absolute;opacity:0;pointer-events:none}
-.pick-card:has(input:checked){border-color:#1d2b44;background:#eef1f7}
-.pick-icon{font-size:30px;line-height:1}
-.pick-label{font-weight:700;font-size:19px}
-.pick-desc{font-size:15px;color:#4b5563;margin:0}
+.pick-card:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.pick-card:has(input:checked){border-color:#1d2b44;box-shadow:0 0 0 3px rgba(29,43,68,.15)}
+.pick-icon-badge{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;background:#1d2b44}
+.pick-label{font-weight:700;font-size:18px}
+.pick-desc{font-size:14px;color:#4b5563;margin:0}
 .pill-group{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
 .pill-choice{display:inline-flex;align-items:center;gap:6px;background:#e8ebf1;border:3px solid transparent;border-radius:999px;padding:10px 16px;font-size:17px;cursor:pointer;font-weight:600;position:relative}
 .pill-choice input{position:absolute;opacity:0;pointer-events:none}
 .pill-choice:has(input:checked){background:#1d2b44;color:#fff}
+/* Lucero Studio AI: mundo propio, más colorido que el resto del CRM (a
+   petición real, 17/10/2026: "mas colorido, mas tarjetas y mejor orden") --
+   vídeo en azul, imagen en ámbar, para que se distinga de un vistazo qué
+   grupo de plantillas/opciones aplica a cuál. */
+.studio-section{border-radius:18px;padding:18px 20px;margin:0 0 20px}
+.studio-section.sec-video{background:linear-gradient(135deg,#eef4ff,#f7faff)}
+.studio-section.sec-image{background:linear-gradient(135deg,#fff4e6,#fffaf2)}
+.studio-section.sec-tune{background:linear-gradient(135deg,#f3f0ff,#faf8ff)}
+.studio-section h2{margin:0 0 4px;font-size:22px}
+.studio-section .sub{margin:0 0 14px}
+.pick-card.kind-video{background:#fff;border-color:#c7dbff}
+.pick-card.kind-video:has(input:checked){border-color:#2563eb;background:#eaf1ff;box-shadow:0 0 0 3px rgba(37,99,235,.18)}
+.pick-card.kind-video .pick-icon-badge{background:#2563eb}
+.pick-card.kind-image{background:#fff;border-color:#f3d9ad}
+.pick-card.kind-image:has(input:checked){border-color:#d9822b;background:#fff1dc;box-shadow:0 0 0 3px rgba(217,130,43,.18)}
+.pick-card.kind-image .pick-icon-badge{background:#d9822b}
+.pick-card.kind-tune{background:#fff;border-color:#ddd0fb}
+.pick-card.kind-tune:has(input:checked){border-color:#7c3aed;background:#f3ecff;box-shadow:0 0 0 3px rgba(124,58,237,.18)}
+.pick-card.kind-tune .pick-icon-badge{background:#7c3aed}
+.studio-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:0 0 20px}
+.studio-ribbon{display:inline-block;padding:5px 12px;border-radius:999px;font-size:14px;font-weight:700;color:#fff;margin-bottom:6px}
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.gallery .card{display:block;margin:0;position:relative}
 @media print{header,nav,.noprint,.btn{display:none!important}body{background:#fff}main{max-width:none}.card{box-shadow:none;border:1px solid #999}}
 </style></head><body>
 <header><strong>Automóviles Lucero</strong>
@@ -1344,6 +1369,17 @@ const STUDIO_STATUS_TEXT: Record<string, string> = {
   rejected_concurrency: "No enviado: demasiadas generaciones a la vez, espera a que termine alguna",
 };
 
+const STUDIO_RIBBON_COLOR: Record<string, string> = {
+  completed: "#2e9e55",
+  submitted: "#d9a22b",
+  in_progress: "#d9a22b",
+  failed: "#b3261e",
+  nsfw: "#b3261e",
+  canceled: "#9aa1ad",
+  rejected_budget: "#b3261e",
+  rejected_concurrency: "#b3261e",
+};
+
 function studioJobCard(j: StudioJob): string {
   const template = findTemplate(j.template_id);
   const tone = j.status === "completed" ? "done" : j.status === "submitted" || j.status === "in_progress" ? "pending" : j.status === "canceled" ? "off" : "urgent";
@@ -1351,9 +1387,9 @@ function studioJobCard(j: StudioJob): string {
     .map((p) => {
       const src = `/crm/studio/archivo/${esc(p)}`;
       const media = p.endsWith(".mp4")
-        ? `<video controls style="width:100%;max-width:360px;border-radius:12px;display:block" src="${src}"></video>`
-        : `<img style="width:100%;max-width:360px;border-radius:12px;display:block" src="${src}">`;
-      return `<div style="margin:6px 0">${media}<a class="btn light" href="${src}" download style="margin-top:6px">⬇️ Descargar</a></div>`;
+        ? `<video controls style="width:100%;border-radius:12px;display:block" src="${src}"></video>`
+        : `<img style="width:100%;border-radius:12px;display:block" src="${src}">`;
+      return `<div style="margin:8px 0">${media}<a class="btn light" href="${src}" download style="margin-top:6px;width:100%;text-align:center">⬇️ Descargar</a></div>`;
     })
     .join("");
   const engine = j.engine_id ? findVideoEngine(j.engine_id) : undefined;
@@ -1364,9 +1400,11 @@ function studioJobCard(j: StudioJob): string {
     j.duration_sec ? `<span class="tag">${j.duration_sec}s</span>` : "",
     j.aspect_ratio ? `<span class="tag">${esc(j.aspect_ratio)}</span>` : "",
   ].join("");
+  const ribbonColor = STUDIO_RIBBON_COLOR[j.status] ?? "#9aa1ad";
   return `<div class="card ${tone}"><div class="info">
+<span class="studio-ribbon" style="background:${ribbonColor}">${esc(STUDIO_STATUS_TEXT[j.status] ?? j.status)}</span>
 <h3>${template ? `${template.icon} ` : ""}${esc(template?.label ?? j.template_id)} · ${esc(j.vehicle_label)}</h3>
-<p><span class="tag">${esc(STUDIO_STATUS_TEXT[j.status] ?? j.status)}</span><span class="tag">~${j.estimated_cost_eur.toFixed(2)} €</span>${detailTags}</p>
+<p><span class="tag">~${j.estimated_cost_eur.toFixed(2)} €</span>${detailTags}</p>
 <p>Pedido por ${esc(j.created_by)} el ${esc(fmtDate(j.created_at))}</p>
 ${j.manual_prompt ? `<p>Pedido extra: "${esc(j.manual_prompt)}"</p>` : ""}
 ${j.error && j.status !== "completed" ? `<p>${esc(j.error)}</p>` : ""}
@@ -1388,53 +1426,81 @@ crm.get("/studio", async (req, res) => {
     return res.type("html").send(page("Studio IA", me(res), body, msgOf(req)));
   }
 
-  const templateCards = STUDIO_TEMPLATES.map(
-    (t, i) => `<label class="pick-card"><input type="radio" name="template_id" value="${esc(t.id)}" required ${i === 0 ? "checked" : ""}>
-<span class="pick-icon">${t.icon}</span><span class="pick-label">${esc(t.label)}</span><p class="pick-desc">${esc(t.description)}</p></label>`,
-  ).join("");
+  const pickCard = (kindClass: string, name: string, value: string, icon: string, label: string, desc: string, checked: boolean, required = false) =>
+    `<label class="pick-card ${kindClass}"><input type="radio" name="${name}" value="${esc(value)}" ${required ? "required" : ""} ${checked ? "checked" : ""}>
+<span class="pick-icon-badge">${icon}</span><span class="pick-label">${esc(label)}</span>${desc ? `<p class="pick-desc">${esc(desc)}</p>` : ""}</label>`;
+
+  const videoTemplateCards = STUDIO_TEMPLATES.filter((t) => t.kind === "video")
+    .map((t, i) => pickCard("kind-video", "template_id", t.id, t.icon, t.label, t.description, i === 0, true))
+    .join("");
+  const imageTemplateCards = STUDIO_TEMPLATES.filter((t) => t.kind === "image")
+    .map((t) => pickCard("kind-image", "template_id", t.id, t.icon, t.label, t.description, false))
+    .join("");
   const vehicleOptions = currentVehicles()
     .map((v) => `<option value="${esc(v.id)}">${esc(vehicleName(v.id))}</option>`)
     .join("");
-  const enginePills = VIDEO_ENGINES.map(
-    (e, i) => `<label class="pill-choice"><input type="radio" name="engine_id" value="${esc(e.id)}" ${i === 0 ? "checked" : ""}>${e.icon} ${esc(e.label)}</label>`,
-  ).join("");
-  const stylePills = VIDEO_STYLES.map(
-    (s, i) => `<label class="pill-choice"><input type="radio" name="style_id" value="${esc(s.id)}" ${i === 0 ? "checked" : ""}>${s.icon} ${esc(s.label)}</label>`,
-  ).join("");
-  const durationPills = `<label class="pill-choice"><input type="radio" name="duration_choice" value="corta" checked>Corta</label><label class="pill-choice"><input type="radio" name="duration_choice" value="larga">Larga</label>`;
-  const aspectPills = IMAGE_ASPECT_RATIOS.map(
-    (r, i) => `<label class="pill-choice"><input type="radio" name="aspect_ratio" value="${esc(r.id)}" ${i === 0 ? "checked" : ""}>${r.icon} ${esc(r.label)}</label>`,
-  ).join("");
+  const engineCards = VIDEO_ENGINES.map((e, i) => pickCard("kind-tune", "engine_id", e.id, e.icon, e.label, e.description, i === 0)).join("");
+  const styleCards = VIDEO_STYLES.map((s, i) => pickCard("kind-tune", "style_id", s.id, s.icon, s.label, s.description, i === 0)).join("");
+  const durationCards =
+    pickCard("kind-tune", "duration_choice", "corta", "⏱️", "Corta", "", true) + pickCard("kind-tune", "duration_choice", "larga", "⏳", "Larga", "", false);
+  const aspectCards = IMAGE_ASPECT_RATIOS.map((r, i) => pickCard("kind-tune", "aspect_ratio", r.id, r.icon, r.label, "", i === 0)).join("");
+
+  const pendingJobs = fresh.filter((j) => j.status === "submitted" || j.status === "in_progress");
+  const doneJobs = fresh.filter((j) => j.status !== "submitted" && j.status !== "in_progress");
+  const spentRatio = budget.monthlyBudgetEur > 0 ? budget.spentEur / budget.monthlyBudgetEur : 0;
+  const spentColor = spentRatio >= 1 ? "#b3261e" : spentRatio >= 0.8 ? "#d9822b" : "#2e9e55";
 
   const body = `<h1>Studio IA</h1>
-<p class="sub">Genera vídeos e imágenes publicitarias de los coches con IA (Higgsfield). Elige una plantilla, el coche y, si hace falta, sube su foto real. Los resultados aparecen aquí mismo, en "Encargos", abajo del todo -- ahí se pueden ver y descargar.</p>
-<div class="box"><p style="margin:0"><b>Gasto estimado este mes:</b> ${budget.spentEur.toFixed(2)} € de ${budget.monthlyBudgetEur} € · <b>Generando ahora:</b> ${budget.activeNow} de ${budget.maxConcurrent}</p></div>
-<div class="box">
+<p class="sub">Genera vídeos e imágenes publicitarias de los coches con IA (Higgsfield). Los resultados aparecen abajo del todo, en "Resultados" -- ahí se ven y se descargan.</p>
+<div class="studio-stats">
+<div class="stat" style="border-left-color:${spentColor}"><b>${budget.spentEur.toFixed(2)} €</b><span>gastado este mes (tope ${budget.monthlyBudgetEur} €)</span></div>
+<div class="stat" style="border-left-color:#2563eb"><b>${budget.activeNow} / ${budget.maxConcurrent}</b><span>generando ahora mismo</span></div>
+</div>
 <form method="post" action="/crm/studio/generar" enctype="multipart/form-data">
-<label>Plantilla</label>
-<div class="pick-grid">${templateCards}</div>
+
+<div class="studio-section sec-video">
+<h2>🎬 Plantillas de vídeo</h2>
+<p class="sub">Necesitan la foto real del coche. La cámara se mueve sola según la plantilla.</p>
+<div class="pick-grid">${videoTemplateCards}</div>
+</div>
+
+<div class="studio-section sec-image">
+<h2>🖼️ Plantillas de imagen</h2>
+<p class="sub">No necesitan foto -- la IA genera la escena entera a partir del texto.</p>
+<div class="pick-grid">${imageTemplateCards}</div>
+</div>
+
+<div class="box">
 <label>Coche (del stock)</label>
 <select name="vehicle_id"><option value="">-- o escríbelo abajo a mano --</option>${vehicleOptions}</select>
 <label>O escribe el coche a mano (si no está en el stock)</label>
 <input name="vehicle_label_manual" placeholder="Ej: Peugeot 3008 2020">
 <label>Detalle extra (solo para "Temporada / evento": qué ambiente quieres)</label>
 <input name="extra" placeholder="Ej: Navidad, verano en la playa...">
-<label>Foto real del coche (obligatoria salvo en las plantillas que no la piden)</label>
+<label>Foto real del coche (obligatoria en las plantillas de vídeo)</label>
 <input type="file" name="foto" accept="image/*">
-<label>Motor de vídeo (solo plantillas de vídeo)</label>
-<div class="pill-group">${enginePills}</div>
-<label>Estilo (solo plantillas de vídeo)</label>
-<div class="pill-group">${stylePills}</div>
-<label>Duración (solo plantillas de vídeo)</label>
-<div class="pill-group">${durationPills}</div>
-<label>Formato (solo plantillas de imagen)</label>
-<div class="pill-group">${aspectPills}</div>
+</div>
+
+<div class="studio-section sec-tune">
+<h2>⚙️ Cómo lo quieres</h2>
+<p class="sub">Estas opciones solo cambian algo si elegiste una plantilla de vídeo (motor/estilo/duración) o de imagen (formato).</p>
+<label>Motor de vídeo</label>
+<div class="pick-grid compact">${engineCards}</div>
+<label>Estilo</label>
+<div class="pick-grid compact">${styleCards}</div>
+<label>Duración</label>
+<div class="pick-grid compact">${durationCards}</div>
+<label>Formato de imagen</label>
+<div class="pick-grid compact">${aspectCards}</div>
 <label>¿Algo más en concreto que quieras pedir? (opcional -- se añade a lo que ya genera la plantilla, no lo sustituye)</label>
 <textarea name="manual_prompt" rows="3" placeholder="Ej: que el cielo esté nublado, que la cámara empiece desde más abajo..."></textarea>
-<button class="btn ok" type="submit">Generar</button>
-</form>
 </div>
-<h2>Encargos</h2>${fresh.length === 0 ? `<div class="empty">Todavía no has generado nada. En cuanto generes algo, aparecerá aquí -- se puede ver y descargar directamente desde esta página.</div>` : fresh.map(studioJobCard).join("")}`;
+
+<button class="btn ok" type="submit" style="font-size:24px;padding:18px 28px">✨ Generar</button>
+</form>
+
+<h2>⏳ En curso</h2>${pendingJobs.length === 0 ? `<div class="empty">Nada generándose ahora mismo.</div>` : `<div class="gallery">${pendingJobs.map(studioJobCard).join("")}</div>`}
+<h2>🎞️ Resultados</h2>${doneJobs.length === 0 ? `<div class="empty">Todavía no has generado nada. En cuanto generes algo, aparecerá aquí -- se puede ver y descargar directamente desde esta página.</div>` : `<div class="gallery">${doneJobs.map(studioJobCard).join("")}</div>`}`;
   res.type("html").send(page("Studio IA", me(res), body, msgOf(req)));
 });
 
