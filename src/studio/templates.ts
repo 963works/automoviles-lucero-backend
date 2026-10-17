@@ -9,12 +9,20 @@
 // automático, nunca lo sustituye, para no perder las reglas de seguridad
 // de BASE_STYLE (no inventar matrícula, no inventar marca).
 //
-// Todos los parámetros de abajo (motores, duración, cfg_scale, relación de
-// aspecto) están confirmados de verdad contra el openapi.json oficial de
-// Higgsfield -- no son una suposición. No se usan Kling 3.0/Wan/Marketing
-// Studio Image: solo aparecían nombrados en la página de precios, sin ruta
-// de API confirmada, y arriesgar dinero real contra una ruta adivinada no
-// compensa.
+// Ampliado el 17/10/2026 a petición real ("mas modelos de higgsfield y lo
+// que gastara usando cada uno de ellos"): se investigaron las páginas
+// oficiales de cada modelo (docs.higgsfield.ai/docs/models/...) para sacar
+// la ruta real de API de cada uno -- ya no hace falta limitarse a los 6
+// endpoints del openapi.json genérico. Los precios de cada motor están
+// tomados tal cual de la página pública de precios de Higgsfield
+// (open.higgsfield.ai): cuando la propia Higgsfield lo anuncia como precio
+// "desde", aquí se marca igual -- la factura real puede ser algo mayor
+// según duración/resolución, por eso el coste estimado siempre lleva un
+// margen de seguridad encima (ver jobs.ts).
+//
+// Quedó fuera Genjutsu (motion-transfer/object-swap/restyle): necesita un
+// VÍDEO de origen de al menos 4s como entrada, no una foto -- no encaja
+// con el flujo real de este concesionario (solo hay fotos de los coches).
 
 export type StudioKind = "image" | "video";
 
@@ -35,7 +43,7 @@ export type StudioTemplate = {
 const BASE_STYLE =
   "fotografía publicitaria de concesionario de coches, iluminación limpia y realista, nada de texto ni logotipos añadidos por la IA, nunca inventar matrícula ni marca distinta a la real";
 
-// ---------- motores de vídeo (confirmados en el openapi.json real) ----------
+// ---------- motores de vídeo (ruta real de cada página oficial de modelo) ----------
 export type VideoEngine = {
   id: string;
   label: string;
@@ -43,45 +51,93 @@ export type VideoEngine = {
   description: string;
   imageToVideoPath: string;
   textToVideoPath: string | null; // null = este motor/nivel no ofrece texto-a-vídeo
-  durations: [number, number]; // [corta, larga], en segundos -- valores reales que acepta la API
-  supportsCfgScale: boolean; // Kling sí tiene cfg_scale; Minimax no
+  imageField: "image_url" | "image_urls"; // el nombre del campo cambia según el modelo
+  durations: [number, number]; // [corta, larga], en segundos -- dentro del rango real que acepta cada API
+  supportsCfgScale: boolean; // Kling sí tiene cfg_scale; Seedance y Cinema Studio no
+  pricePerSecondEur: number; // precio real publicado por Higgsfield (open.higgsfield.ai), ver priceNote
+  priceNote: string;
 };
 
 export const VIDEO_ENGINES: VideoEngine[] = [
   {
-    id: "kling_standard",
-    label: "Kling estándar",
+    id: "kling_3",
+    label: "Kling 3.0",
     icon: "⚡",
-    description: "El más rápido y económico",
-    imageToVideoPath: "kling-video/v2.5-turbo/standard/image-to-video",
-    textToVideoPath: null,
+    description: "El más económico de los tres",
+    imageToVideoPath: "kling-video/v3.0/std/image-to-video",
+    textToVideoPath: "kling-video/v3.0/std/text-to-video",
+    imageField: "image_url",
     durations: [5, 10],
     supportsCfgScale: true,
+    pricePerSecondEur: 0.042,
+    priceNote: "precio real publicado por Higgsfield",
   },
   {
-    id: "kling_pro",
-    label: "Kling Pro",
-    icon: "💎",
-    description: "Más calidad de imagen, cuesta más",
-    imageToVideoPath: "kling-video/v2.5-turbo/pro/image-to-video",
-    textToVideoPath: "kling-video/v2.5-turbo/pro/text-to-video",
+    id: "seedance_25",
+    label: "Seedance 2.5",
+    icon: "🌅",
+    description: "Más detalle, cuesta más que Kling",
+    imageToVideoPath: "bytedance/seedance-2.5/image-to-video",
+    textToVideoPath: "bytedance/seedance-2.5/text-to-video",
+    imageField: "image_url",
     durations: [5, 10],
-    supportsCfgScale: true,
-  },
-  {
-    id: "minimax",
-    label: "Minimax Hailuo",
-    icon: "🌊",
-    description: "Otro motor, movimiento distinto",
-    imageToVideoPath: "minimax/hailuo-2.3/standard/image-to-video",
-    textToVideoPath: "minimax/hailuo-2.3/standard/text-to-video",
-    durations: [6, 10],
     supportsCfgScale: false,
+    pricePerSecondEur: 0.144,
+    priceNote: "precio \"desde\" publicado por Higgsfield -- puede ser algo más según duración/resolución",
+  },
+  {
+    id: "cinema_studio_4",
+    label: "Cinema Studio 4.0",
+    icon: "🎞️",
+    description: "El de más calidad cinematográfica, el más caro",
+    imageToVideoPath: "higgsfield/cinema-studio/4.0",
+    textToVideoPath: "higgsfield/cinema-studio/4.0",
+    imageField: "image_urls",
+    durations: [5, 10],
+    supportsCfgScale: false,
+    pricePerSecondEur: 0.206,
+    priceNote: "precio \"desde\" publicado por Higgsfield -- puede ser algo más según duración/resolución",
   },
 ];
 
 export function findVideoEngine(id: string): VideoEngine | undefined {
   return VIDEO_ENGINES.find((e) => e.id === id);
+}
+
+// ---------- motores de imagen (antes solo existía Soul V2 a secas) ----------
+export type ImageEngine = {
+  id: string;
+  label: string;
+  icon: string;
+  description: string;
+  path: string;
+  pricePerImageEur: number;
+  priceNote: string;
+};
+
+export const IMAGE_ENGINES: ImageEngine[] = [
+  {
+    id: "soul_v2",
+    label: "Soul V2",
+    icon: "🎨",
+    description: "El más barato, bueno para probar conceptos rápido",
+    path: "higgsfield-ai/soul/v2/standard",
+    pricePerImageEur: 0.003,
+    priceNote: "precio real publicado por Higgsfield",
+  },
+  {
+    id: "marketing_studio",
+    label: "Marketing Studio",
+    icon: "🏷️",
+    description: "Más resolución, pensado para imagen ya lista para publicar",
+    path: "marketing-studio/image",
+    pricePerImageEur: 0.014,
+    priceNote: "precio \"desde\" publicado por Higgsfield -- puede ser algo más en 4K",
+  },
+];
+
+export function findImageEngine(id: string): ImageEngine | undefined {
+  return IMAGE_ENGINES.find((e) => e.id === id) ?? IMAGE_ENGINES[0];
 }
 
 // Estilo = palabras en el prompt + cfg_scale (cuanto más bajo, más libertad

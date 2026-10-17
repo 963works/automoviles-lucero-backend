@@ -11,7 +11,7 @@ import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
 import { moveToTrash, listTrash, restoreFromTrash, purgeFromTrash } from "./trash.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled, isEmailAutoSendEnabled, setEmailAutoSendEnabled } from "../tools/agent-toggle.js";
-import { STUDIO_TEMPLATES, findTemplate, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ASPECT_RATIOS, findVideoEngine, findVideoStyle } from "../studio/templates.js";
+import { STUDIO_TEMPLATES, findTemplate, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ENGINES, IMAGE_ASPECT_RATIOS, findVideoEngine, findVideoStyle, findImageEngine } from "../studio/templates.js";
 import { createStudioJob, listStudioJobs, getStudioJob, pollStudioJob, saveUploadedPhoto, absolutePathFor, budgetInfo, type StudioJob } from "../studio/jobs.js";
 import { isHiggsfieldConnected } from "../studio/higgsfield.js";
 import { existsSync as fileExists } from "fs";
@@ -1392,7 +1392,7 @@ function studioJobCard(j: StudioJob): string {
       return `<div style="margin:8px 0">${media}<a class="btn light" href="${src}" download style="margin-top:6px;width:100%;text-align:center">⬇️ Descargar</a></div>`;
     })
     .join("");
-  const engine = j.engine_id ? findVideoEngine(j.engine_id) : undefined;
+  const engine = j.engine_id ? (template?.kind === "image" ? findImageEngine(j.engine_id) : findVideoEngine(j.engine_id)) : undefined;
   const style = j.style_id ? findVideoStyle(j.style_id) : undefined;
   const detailTags = [
     engine ? `<span class="tag">${engine.icon} ${esc(engine.label)}</span>` : "",
@@ -1439,7 +1439,12 @@ crm.get("/studio", async (req, res) => {
   const vehicleOptions = currentVehicles()
     .map((v) => `<option value="${esc(v.id)}">${esc(vehicleName(v.id))}</option>`)
     .join("");
-  const engineCards = VIDEO_ENGINES.map((e, i) => pickCard("kind-tune", "engine_id", e.id, e.icon, e.label, e.description, i === 0)).join("");
+  const videoEngineCards = VIDEO_ENGINES.map((e, i) =>
+    pickCard("kind-tune", "video_engine_id", e.id, e.icon, e.label, `~${e.pricePerSecondEur.toFixed(3)} €/s · ${e.description}`, i === 0),
+  ).join("");
+  const imageEngineCards = IMAGE_ENGINES.map((e, i) =>
+    pickCard("kind-tune", "image_engine_id", e.id, e.icon, e.label, `~${e.pricePerImageEur.toFixed(3)} €/imagen · ${e.description}`, i === 0),
+  ).join("");
   const styleCards = VIDEO_STYLES.map((s, i) => pickCard("kind-tune", "style_id", s.id, s.icon, s.label, s.description, i === 0)).join("");
   const durationCards =
     pickCard("kind-tune", "duration_choice", "corta", "⏱️", "Corta", "", true) + pickCard("kind-tune", "duration_choice", "larga", "⏳", "Larga", "", false);
@@ -1483,13 +1488,15 @@ crm.get("/studio", async (req, res) => {
 
 <div class="studio-section sec-tune">
 <h2>⚙️ Cómo lo quieres</h2>
-<p class="sub">Estas opciones solo cambian algo si elegiste una plantilla de vídeo (motor/estilo/duración) o de imagen (formato).</p>
+<p class="sub">Precios reales publicados por Higgsfield (algunos son precio "desde": la factura real puede ser algo mayor según duración/resolución). Estas opciones solo cambian algo según el tipo de plantilla que hayas elegido arriba.</p>
 <label>Motor de vídeo</label>
-<div class="pick-grid compact">${engineCards}</div>
-<label>Estilo</label>
+<div class="pick-grid compact">${videoEngineCards}</div>
+<label>Estilo de vídeo</label>
 <div class="pick-grid compact">${styleCards}</div>
-<label>Duración</label>
+<label>Duración de vídeo</label>
 <div class="pick-grid compact">${durationCards}</div>
+<label>Motor de imagen</label>
+<div class="pick-grid compact">${imageEngineCards}</div>
 <label>Formato de imagen</label>
 <div class="pick-grid compact">${aspectCards}</div>
 <label>¿Algo más en concreto que quieras pedir? (opcional -- se añade a lo que ya genera la plantilla, no lo sustituye)</label>
@@ -1517,7 +1524,7 @@ crm.post("/studio/generar", studioUpload.single("foto"), async (req, res) => {
   const photo = req.file ? saveUploadedPhoto(req.file.buffer, req.file.originalname) : null;
   const extra = String(req.body.extra ?? "").trim() || undefined;
   const manualPrompt = String(req.body.manual_prompt ?? "").trim() || undefined;
-  const engineId = String(req.body.engine_id ?? "").trim() || undefined;
+  const engineId = String((template.kind === "video" ? req.body.video_engine_id : req.body.image_engine_id) ?? "").trim() || undefined;
   const styleId = String(req.body.style_id ?? "").trim() || undefined;
   const durationChoice = req.body.duration_choice === "larga" ? "larga" : "corta";
   const aspectRatio = String(req.body.aspect_ratio ?? "").trim() || undefined;

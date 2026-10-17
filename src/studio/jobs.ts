@@ -6,18 +6,17 @@
 // para esto.
 //
 // Control de coste ANTES de llamar a Higgsfield, no después (a petición
-// explícita): tope mensual y tope de generaciones simultáneas. El precio
-// por segundo de vídeo varía según el motor elegido (Kling Pro cuesta más
-// que Kling estándar; Minimax no tiene precio público confirmado todavía)
-// -- la estimación de abajo es deliberadamente conservadora (al alza) y
-// solo sirve para frenar el gasto antes de tiempo, nunca como factura
-// exacta: la factura real se revisa en el panel de Higgsfield.
+// explícita): tope mensual y tope de generaciones simultáneas. Desde el
+// 17/10/2026 el coste estimado usa el precio real publicado por Higgsfield
+// para cada motor (ver templates.ts, VIDEO_ENGINES/IMAGE_ENGINES) más un
+// margen de seguridad fijo -- algunos precios son "desde" (pueden ser algo
+// mayores según duración/resolución elegida), de ahí el margen.
 import crypto from "crypto";
 import { existsSync, mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { readCollection, writeCollection } from "../store.js";
 import { submitHiggsfieldJob, getHiggsfieldStatus, outputUrls, isHiggsfieldConnected, type HiggsfieldStatus } from "./higgsfield.js";
-import { findTemplate, findVideoEngine, findVideoStyle, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ASPECT_RATIOS, type StudioTemplate } from "./templates.js";
+import { findTemplate, findVideoEngine, findVideoStyle, findImageEngine, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ENGINES, IMAGE_ASPECT_RATIOS, type StudioTemplate, type VideoEngine, type ImageEngine } from "./templates.js";
 
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
 const UPLOADS_DIR = path.join(DATA_DIR, "studio_uploads");
@@ -31,16 +30,17 @@ const MONTHLY_BUDGET_EUR = Number(process.env.HIGGSFIELD_MONTHLY_BUDGET_EUR ?? 6
 const MAX_CONCURRENT = Number(process.env.HIGGSFIELD_MAX_CONCURRENT ?? 2);
 
 const DEFAULT_ASPECT_RATIO = "4:3";
-const DEFAULT_ENGINE_ID = "kling_standard";
+const DEFAULT_ENGINE_ID = "kling_3";
 const DEFAULT_STYLE_ID = "normal";
+const DEFAULT_IMAGE_ENGINE_ID = "soul_v2";
 
-// Estimación al alza, no la factura real (ver nota de arriba). Minimax no
-// tiene precio público confirmado -- se trata igual que Kling estándar por
-// seguridad, con el mismo margen.
-function estimateCostEur(kind: StudioTemplate["kind"], engineId: string, durationSec: number): number {
-  if (kind === "image") return 0.02;
-  const perSecond = engineId === "kling_pro" ? 0.07 : 0.05;
-  return Math.round((perSecond * durationSec + 0.02) * 100) / 100;
+// Margen de seguridad fijo encima del precio real -- nunca la factura
+// exacta, que se revisa en el panel de Higgsfield.
+function estimateVideoCostEur(engine: VideoEngine, durationSec: number): number {
+  return Math.round((engine.pricePerSecondEur * durationSec + 0.03) * 100) / 100;
+}
+function estimateImageCostEur(engine: ImageEngine): number {
+  return Math.round((engine.pricePerImageEur + 0.01) * 1000) / 1000;
 }
 
 export type StudioJobStatus =
@@ -59,7 +59,7 @@ export type StudioJob = {
   vehicle_label: string;
   extra: string | null;
   manual_prompt: string | null;
-  engine_id: string | null; // solo para vídeo
+  engine_id: string | null; // motor de vídeo o de imagen, según la plantilla
   style_id: string | null; // solo para vídeo
   duration_sec: number | null; // solo para vídeo
   aspect_ratio: string | null; // solo para imagen
@@ -133,7 +133,7 @@ export type CreateJobInput = {
   vehicleLabel: string;
   extra?: string;
   manualPrompt?: string;
-  engineId?: string; // solo aplica a plantillas de vídeo
+  engineId?: string; // motor de vídeo (plantillas de vídeo) o de imagen (plantillas de imagen)
   styleId?: string; // solo aplica a plantillas de vídeo
   durationChoice?: "corta" | "larga"; // solo aplica a plantillas de vídeo
   aspectRatio?: string; // solo aplica a plantillas de imagen
@@ -171,10 +171,13 @@ export async function createStudioJob(input: CreateJobInput): Promise<CreateJobR
 
     const finalPrompt = [basePrompt, style.promptSuffix, input.manualPrompt?.trim()].filter(Boolean).join(". ");
     body = { prompt: finalPrompt, duration: durationSec };
-    if (input.photo) body.image_url = input.photo.publicUrl;
+    if (input.photo) {
+      if (engine.imageField === "image_urls") body.image_urls = [input.photo.publicUrl];
+      else body.image_url = input.photo.publicUrl;
+    }
     if (engine.supportsCfgScale) body.cfg_scale = style.cfgScale;
 
-    const cost = estimateCostEur(template.kind, engine.id, durationSec);
+    const cost = estimateVideoCostEur(engine, durationSec);
     if (monthSpendEur() + cost > MONTHLY_BUDGET_EUR) {
       return makeRejected(input, template, cost, "rejected_budget", `Se pararía el gasto mensual estimado (tope ${MONTHLY_BUDGET_EUR} €). Pide que se amplíe el tope si quieres seguir generando este mes.`, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
     }
@@ -185,11 +188,13 @@ export async function createStudioJob(input: CreateJobInput): Promise<CreateJobR
   }
 
   // imagen
+  const imageEngine = findImageEngine(input.engineId ?? DEFAULT_IMAGE_ENGINE_ID) ?? IMAGE_ENGINES[0];
+  engineId = imageEngine.id;
   aspectRatio = IMAGE_ASPECT_RATIOS.some((r) => r.id === input.aspectRatio) ? input.aspectRatio! : DEFAULT_ASPECT_RATIO;
   const finalPrompt = [basePrompt, input.manualPrompt?.trim()].filter(Boolean).join(". ");
-  modelPath = "higgsfield-ai/soul/v2/standard";
+  modelPath = imageEngine.path;
   body = { prompt: finalPrompt, aspect_ratio: aspectRatio };
-  const cost = estimateCostEur(template.kind, "soul", 0);
+  const cost = estimateImageCostEur(imageEngine);
   if (monthSpendEur() + cost > MONTHLY_BUDGET_EUR) {
     return makeRejected(input, template, cost, "rejected_budget", `Se pararía el gasto mensual estimado (tope ${MONTHLY_BUDGET_EUR} €). Pide que se amplíe el tope si quieres seguir generando este mes.`, { engineId, styleId, durationSec, aspectRatio, finalPrompt });
   }
