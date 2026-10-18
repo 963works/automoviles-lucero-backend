@@ -72,7 +72,39 @@ type Handoff = { id: string; lead_phone: string | null; lead_name?: string | nul
 // del CRM -- se guardaban y ahí se quedaban. Se muestran ahora en la ficha
 // del cliente.
 type ConversationSummary = { id: string; phone?: string | null; summary: string; created_at: string };
-type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; portal?: string | null; draft_note?: string; thread_id?: string; in_reply_to?: string; answered?: boolean; created_at: string };
+type InboxMail = { id: string; from: string; subject: string; text: string; outcome: string; portal?: string | null; draft_note?: string; thread_id?: string; in_reply_to?: string; answered?: boolean; answered_by?: "ia" | "equipo"; read?: boolean; archived?: boolean; created_at: string };
+// Mensajes de WhatsApp entrantes (módulo CRM mensajes/clientes, 18/10/2026).
+// Solo registra lo que escribe el cliente y si la IA respondió -- esta
+// bandeja NO tiene botón de responder: el envío real de WhatsApp sigue
+// desactivado hasta verificar la conexión (a petición expresa: "preparar la
+// interfaz y la lógica, pero no activar el envío hasta verificar la
+// conexión prevista para mañana").
+type WhatsappMessage = {
+  id: string;
+  phone: string;
+  text: string;
+  reply_text?: string | null;
+  delivered?: boolean;
+  read?: boolean;
+  answered?: boolean;
+  answered_by?: "ia" | "equipo";
+  archived?: boolean;
+  created_at: string;
+};
+type CallAnalysis = {
+  id: string;
+  channel: string;
+  from_number?: string | null;
+  duration_ms?: number | null;
+  call_successful?: boolean | null;
+  summary?: string | null;
+  issues_detected?: string | null;
+  security_event?: string | null;
+  needs_review?: boolean;
+  read?: boolean;
+  archived?: boolean;
+  created_at: string;
+};
 type VehicleOverride = { vehicle_id: string; price_eur: number };
 
 const RESERVATION_TEXT: Record<string, string> = {
@@ -98,8 +130,18 @@ const TEMP: Record<string, { label: string; cls: string; help: string; letter: s
   WARM: { label: "Tibio · interesado, sin prisa", cls: "t-warm", help: "tibio", letter: "T" },
   COLD: { label: "Frío · solo está mirando", cls: "t-cold", help: "frío", letter: "F" },
 };
-// Agente por el que entró el cliente. El texto va en la tarjeta; la letra solo indica temperatura.
-const ORIGIN: Record<string, string> = { VOICE: "Voz", CHAT: "Chat", EMAIL: "Correo", MANUAL: "Añadido a mano" };
+// Agente/canal por el que entró el cliente. El texto va en la tarjeta; la letra solo indica temperatura.
+// FALLO REAL detectado en la auditoría del 18/10/2026: a los leads reales
+// con origin "WHATSAPP" (confirmado en data/leads.json de producción) les
+// faltaba entrada aquí -- se mostraban como "Origen sin registrar" aunque
+// el dato correcto SÍ estaba guardado. Lo mismo le faltaba a "FACEBOOK".
+const ORIGIN: Record<string, string> = { VOICE: "Voz", CHAT: "Chat", EMAIL: "Correo", WHATSAPP: "WhatsApp", FACEBOOK: "Facebook", MANUAL: "Añadido a mano" };
+// Plataforma que originó el contacto (distinta del canal): Coches.net,
+// Wallapop... Antes de mostrar un dato de origen hay que decir
+// "Origen desconocido" en vez de inventarlo (encargo del cliente, Fase 2).
+function platformLabel(portal: string | null | undefined): string {
+  return portal && portal.trim() ? portal : "Origen desconocido";
+}
 
 // Frase con lo que quiere el cliente, sacada de sus visitas y reservas reales.
 function situation(l: Lead): string {
@@ -196,6 +238,9 @@ const MENU: [string, string][] = [
   ["/crm/citas", "Visitas"],
   ["/crm/reservas", "Reservas"],
   ["/crm/pendientes", "Pendientes"],
+  ["/crm/correos", "Correos"],
+  ["/crm/whatsapp", "WhatsApp"],
+  ["/crm/llamadas", "Llamadas"],
   ["/crm/clientes", "Clientes"],
   ["/crm/coches", "Coches"],
 ];
@@ -240,6 +285,22 @@ h2{font-size:24px;margin:22px 0 10px}
 .allok{background:#e3f6e8;border:3px solid #2e9e55;border-radius:16px;padding:18px;margin-bottom:20px;font-size:22px;font-weight:700}
 .empty{background:#fff;border-radius:16px;padding:20px;color:#4b5563;font-size:20px}
 .urgent{border-left:10px solid #b3261e}.pending{border-left:10px solid #d9a22b}.done{border-left:10px solid #2e9e55}.off{border-left:10px solid #9aa1ad;opacity:.75}
+/* Módulo mensajes/clientes (18/10/2026): "leído" y "respondido" son estados
+   distintos -- sin responder resalta (fondo claro, texto en negrita);
+   respondido se apaga (fondo gris, sin perder legibilidad); sin leer lleva
+   además el texto en negrita. No confundir con .urgent/.pending/.done, que
+   son el borde de color de Pendientes/Reservas/Visitas. */
+.msg-unanswered{background:#fffaf0}
+.msg-answered{background:#f3f4f6;opacity:.82}
+.msg-unread h3,.msg-unread .meta{font-weight:800}
+.msg-read h3,.msg-read .meta{font-weight:400}
+.estado-ia{background:#e0ecff;color:#1d3a8a}
+.estado-equipo{background:#e3f6e8;color:#1d6b3d}
+.bulkbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:#fff;border-radius:16px;padding:14px 18px;margin:0 0 16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.bulkbar label{font-size:17px;font-weight:600;display:flex;align-items:center;gap:6px}
+.msgsel{width:22px;height:22px;margin:0}
+.filterbar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+.filterbar a{text-decoration:none}
 .btn{font:inherit;font-size:20px;padding:14px 20px;border:0;border-radius:14px;background:#1d2b44;color:#fff;cursor:pointer;margin:6px 8px 6px 0;text-decoration:none;display:inline-block}
 .btn.ok{background:#2e9e55}.btn.warn{background:#d9822b}.btn.danger{background:#b3261e}.btn.light{background:#e4e7ec;color:#1d2b44}
 input,select,textarea{font:inherit;font-size:20px;padding:12px 14px;border:2px solid #c3c9d4;border-radius:12px;width:100%;margin:6px 0 14px;background:#fff}
@@ -322,6 +383,14 @@ a.link{color:#1d4ed8;font-weight:700;font-size:20px}
     try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
   }, true);
 })();
+// Selección masiva de mensajes (módulo mensajes/clientes, 18/10/2026):
+// la casilla "Seleccionar todos" marca/desmarca todas las de su misma
+// bandeja de un golpe. Genérico, lo usan Correos/WhatsApp/Llamadas.
+window.toggleAllMsgs = function (master, name) {
+  document.querySelectorAll('input[type=checkbox][name="' + name + '"]').forEach(function (cb) {
+    cb.checked = master.checked;
+  });
+};
 // Timbre real (13/10/2026, corregido tras probarlo en vivo): avisa con un
 // sonido tipo "ding" y refresca la página sola cuando aparece una alerta
 // urgente nueva (lead caliente, reserva, escalado) -- comprueba cada 15s en
@@ -873,8 +942,24 @@ crm.post("/correos/:id", async (req, res) => {
   const inbox = list<InboxMail>("email_inbox");
   const m = inbox.find((x) => x.id === req.params.id);
   if (!m) return back(res, "/crm/pendientes", "No encuentro ese correo");
+  // Acciones nuevas del módulo mensajes/clientes (18/10/2026), solo
+  // alcanzables desde /crm/correos -- Pendientes no tiene botones para
+  // ellas, así que no cambia nada de lo que ya funcionaba ahí.
+  if (accion === "marcar_leido") {
+    m.read = true;
+    save("email_inbox", inbox);
+    return back(res, "/crm/correos", "Marcado como leído");
+  }
+  if (accion === "archivar") {
+    m.archived = true;
+    save("email_inbox", inbox);
+    return back(res, "/crm/correos", "Correo archivado");
+  }
   if (accion === "ya") {
+    // Responde una persona, no la IA -- se registra así (Fase 4 del encargo:
+    // "Respondido por IA" vs "Respondido por equipo").
     m.answered = true;
+    m.answered_by = "equipo";
     save("email_inbox", inbox);
     return back(res, "/crm/pendientes", "Hecho");
   }
@@ -884,6 +969,7 @@ crm.post("/correos/:id", async (req, res) => {
   const thread = m.thread_id && m.in_reply_to ? { threadId: m.thread_id, inReplyTo: m.in_reply_to } : undefined;
   const delivery = await deliverEmail(m.from, subject, `${text}\n\nAutomóviles Lucero`, thread);
   m.answered = true;
+  m.answered_by = "equipo";
   save("email_inbox", inbox);
   if (delivery.status === "sent") back(res, "/crm/pendientes", "Respuesta enviada");
   else if (delivery.status === "queued") back(res, "/crm/pendientes", "Respuesta guardada: se enviará cuando Gmail esté conectado");
@@ -891,7 +977,263 @@ crm.post("/correos/:id", async (req, res) => {
 });
 
 crm.get("/avisos", (_req, res) => res.redirect("/crm/pendientes"));
-crm.get("/correos", (_req, res) => res.redirect("/crm/pendientes"));
+
+// ---------- Mensajes: filtros, estados y acciones masivas compartidas ----------
+// Módulo CRM mensajes/clientes (18/10/2026). Las tres bandejas (Correos,
+// WhatsApp, Llamadas) comparten exactamente la misma idea de estado y las
+// mismas acciones masivas -- este bloque es el único sitio donde vive esa
+// lógica, para que las tres se comporten igual y no haya que mantenerla
+// tres veces.
+type MsgFilter = "todos" | "pendientes" | "respondidos" | "sin_leer" | "archivados";
+const MSG_FILTERS: MsgFilter[] = ["todos", "pendientes", "respondidos", "sin_leer", "archivados"];
+function msgFilterFromQuery(req: express.Request): MsgFilter {
+  const f = String(req.query.f ?? "todos");
+  return (MSG_FILTERS as string[]).includes(f) ? (f as MsgFilter) : "todos";
+}
+// "Pendiente"/"Respondido" no aplica a llamadas (no se puede "contestar" una
+// llamada ya ocurrida) -- para esas, hasAnswered=false y el filtro
+// correspondiente simplemente no se ofrece en su barra.
+function matchesMsgFilter(f: MsgFilter, m: { answered?: boolean; read?: boolean; archived?: boolean }): boolean {
+  if (f === "archivados") return Boolean(m.archived);
+  if (m.archived) return false;
+  if (f === "pendientes") return !m.answered;
+  if (f === "respondidos") return Boolean(m.answered);
+  if (f === "sin_leer") return !m.read;
+  return true;
+}
+function answeredTag(m: { answered?: boolean; answered_by?: "ia" | "equipo" }): string {
+  if (!m.answered) return `<span class="tag" style="background:#fff3cd;color:#7a5b00">Pendiente de respuesta</span>`;
+  // No inventar quién respondió: antes de este módulo (18/10/2026) solo el
+  // equipo podía marcar un correo como respondido (la IA nunca lo hacía),
+  // así que un registro antiguo sin `answered_by` corresponde a una persona
+  // -- pero por si acaso no se puede asegurar al 100%, si falta el dato se
+  // muestra neutral en vez de adivinar.
+  if (m.answered_by === "ia") return `<span class="tag estado-ia">Respondido por IA</span>`;
+  if (m.answered_by === "equipo") return `<span class="tag estado-equipo">Respondido por equipo</span>`;
+  return `<span class="tag">Respondido</span>`;
+}
+function msgRowClass(m: { answered?: boolean; read?: boolean }, hasAnswered: boolean): string {
+  const estado = hasAnswered ? (m.answered ? "msg-answered" : "msg-unanswered") : "";
+  const leido = m.read ? "msg-read" : "msg-unread";
+  return `card ${estado} ${leido}`.trim();
+}
+function filterPills(base: string, f: MsgFilter, q: string, withAnswered: boolean): string {
+  const labels: [MsgFilter, string][] = withAnswered
+    ? [["todos", "Todos"], ["pendientes", "Pendientes"], ["respondidos", "Respondidos"], ["sin_leer", "Sin leer"], ["archivados", "Archivados"]]
+    : [["todos", "Todas"], ["sin_leer", "Sin leer"], ["archivados", "Archivadas"]];
+  const qs = q ? `&q=${encodeURIComponent(q)}` : "";
+  return `<div class="filterbar">${labels.map(([k, label]) => `<a class="tag" href="${base}?f=${k}${qs}" style="${f === k ? "outline:4px solid #1d2b44" : ""}">${esc(label)}</a>`).join("")}</div>`;
+}
+function searchBox(base: string, f: MsgFilter, q: string, placeholder: string): string {
+  return `<form class="search" method="get" action="${base}">${f !== "todos" ? `<input type="hidden" name="f" value="${esc(f)}">` : ""}<input name="q" placeholder="${esc(placeholder)}" value="${esc(q)}"><button class="btn" type="submit">Buscar</button>${q ? `<a class="btn light" href="${base}${f !== "todos" ? `?f=${f}` : ""}">Quitar filtro</a>` : ""}</form>`;
+}
+function bulkBar(base: string, f: MsgFilter, q: string, count: number, withAnswered: boolean): string {
+  const scope = f === "todos" ? "todos los mensajes de esta vista" : f === "sin_leer" ? "los mensajes sin leer de esta vista" : f === "archivados" ? "los mensajes archivados de esta vista" : f === "pendientes" ? "los mensajes pendientes de esta vista" : "los mensajes respondidos de esta vista";
+  return `<form id="${base}-bulk" method="post" action="${base}-masivo"><input type="hidden" name="f" value="${esc(f)}"><input type="hidden" name="q" value="${esc(q)}"></form>
+<div class="bulkbar">
+<label><input class="msgsel" type="checkbox" onchange="toggleAllMsgs(this,'ids')"> Seleccionar todos (${count})</label>
+<button class="btn light" type="submit" form="${base}-bulk" name="accion" value="marcar_leido">Marcar leído</button>
+<button class="btn light" type="submit" form="${base}-bulk" name="accion" value="archivar">Archivar</button>
+<button class="btn danger" type="submit" form="${base}-bulk" name="accion" value="eliminar_seleccionados" onclick="return confirm('¿Eliminar los mensajes seleccionados? Se pueden recuperar luego desde la Papelera.')">Eliminar seleccionados</button>
+<button class="btn danger" type="submit" form="${base}-bulk" name="accion" value="eliminar_todos" onclick="return confirm('¿Eliminar ${scope.replace(/'/g, "")} (' + document.querySelectorAll(\`input[type=checkbox][name=ids]\`).length + ' en pantalla)? Se pueden recuperar luego desde la Papelera.')">Eliminar todos los de esta vista</button>
+</div>`;
+}
+function msgCheckbox(base: string, id: string): string {
+  return `<input class="msgsel" type="checkbox" name="ids" value="${esc(id)}" form="${base}-bulk" style="position:absolute;top:18px;right:20px">`;
+}
+// Ejecuta la acción masiva sobre una colección genérica -- compartido por
+// Correos/WhatsApp/Llamadas. `label` sirve para la Papelera.
+function runBulkAction<T extends { id: string; read?: boolean; archived?: boolean; answered?: boolean }>(
+  collection: string,
+  accion: string,
+  ids: string[],
+  filterScope: { f: MsgFilter; q: string; search: (m: T) => boolean },
+  labelOf: (m: T) => string,
+  deletedBy: string,
+): number {
+  const items = list<T>(collection);
+  const targets = accion === "eliminar_todos" ? items.filter((m) => matchesMsgFilter(filterScope.f, m) && filterScope.search(m)) : items.filter((m) => ids.includes(m.id));
+  if (targets.length === 0) return 0;
+  const targetIds = new Set(targets.map((t) => t.id));
+  if (accion === "marcar_leido") {
+    for (const m of items) if (targetIds.has(m.id)) m.read = true;
+    save(collection, items);
+  } else if (accion === "archivar") {
+    for (const m of items) if (targetIds.has(m.id)) m.archived = true;
+    save(collection, items);
+  } else if (accion === "eliminar_seleccionados" || accion === "eliminar_todos") {
+    for (const m of targets) moveToTrash(collection, m, labelOf(m), deletedBy);
+    save(collection, items.filter((m) => !targetIds.has(m.id)));
+  }
+  return targets.length;
+}
+function searchMatches(q: string, ...fields: (string | null | undefined)[]): boolean {
+  if (!q) return true;
+  const needle = q.trim().toLowerCase();
+  return fields.some((f) => (f ?? "").toLowerCase().includes(needle));
+}
+
+// ---------- Correos (bandeja completa) ----------
+crm.get("/correos", (req, res) => {
+  const f = msgFilterFromQuery(req);
+  const q = String(req.query.q ?? "").trim();
+  const all = list<InboxMail>("email_inbox").filter((m) => m.outcome !== "automated_no_reply");
+  const items = all.filter((m) => matchesMsgFilter(f, m) && searchMatches(q, m.from, m.subject, m.portal, m.text)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const body = `<h1>Correos</h1>
+<p class="sub">Todo lo que ha llegado por correo: lo que ya contestó Miguel solo y lo que espera respuesta humana.</p>
+${filterPills("/crm/correos", f, q, true)}
+${searchBox("/crm/correos", f, q, "Buscar por remitente, asunto o portal")}
+${items.length > 0 ? bulkBar("/crm/correos", f, q, items.length, true) : ""}
+${items.length === 0 ? `<div class="empty">No hay correos en esta vista.</div>` : items.map((m) => `<div class="${msgRowClass(m, true)}" style="position:relative"><div class="info">
+${msgCheckbox("/crm/correos", m.id)}
+<h3>${esc(m.subject || "(sin asunto)")}</h3>
+<p class="meta">De: <b>${esc(m.from)}</b> · <span class="tag">${esc(platformLabel(m.portal))}</span> · ${esc(fmtDate(m.created_at))}</p>
+<p>${answeredTag(m)}${m.archived ? ` <span class="tag">Archivado</span>` : ""}</p>
+<div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
+${m.draft_note ? `<p style="margin-top:10px"><b>${m.outcome === "tope_diario_alcanzado" ? "Respuesta ya redactada" : `Borrador para copiar en ${esc(platformLabel(m.portal))}`}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
+<form method="post" action="/crm/correos/${esc(m.id)}">
+${!m.answered ? `<label>Tu respuesta (si no escribes nada, no se envía nada)</label><textarea name="respuesta" rows="4"></textarea><button class="btn ok" type="submit" name="accion" value="responder">Enviar mi respuesta</button><button class="btn light" type="submit" name="accion" value="ya">No hace falta</button>` : ""}
+${!m.read ? `<button class="btn light" type="submit" name="accion" value="marcar_leido">Marcar leído</button>` : ""}
+${!m.archived ? `<button class="btn light" type="submit" name="accion" value="archivar">Archivar</button>` : ""}
+</form></div></div>`).join("")}`;
+  res.type("html").send(page("Correos", me(res), body, msgOf(req)));
+});
+
+crm.post("/correos-masivo", (req, res) => {
+  const f = msgFilterFromQuery(req);
+  const q = String(req.body.q ?? "").trim();
+  const accion = String(req.body.accion ?? "");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  const n = runBulkAction<InboxMail>(
+    "email_inbox",
+    accion,
+    ids,
+    { f, q, search: (m) => searchMatches(q, m.from, m.subject, m.portal, m.text) },
+    (m) => `Correo: ${m.subject || "(sin asunto)"} (${m.from})`,
+    me(res).email,
+  );
+  back(res, "/crm/correos", n === 0 ? "No había nada que hacer" : accion.startsWith("eliminar") ? `${n} correo(s) movido(s) a la papelera` : accion === "archivar" ? `${n} correo(s) archivado(s)` : `${n} correo(s) marcado(s) como leído`);
+});
+
+// ---------- WhatsApp (bandeja completa -- solo lectura, sin responder) ----------
+// A petición expresa: "preparar la interfaz y la lógica, pero no activar el
+// envío hasta verificar la conexión prevista para mañana". Por eso esta
+// bandeja NO tiene ningún formulario de respuesta -- solo leer, marcar
+// leído, archivar y eliminar, igual que las demás.
+crm.get("/whatsapp", (req, res) => {
+  const f = msgFilterFromQuery(req);
+  const q = String(req.query.q ?? "").trim();
+  const all = list<WhatsappMessage>("whatsapp_inbox");
+  const items = all.filter((m) => matchesMsgFilter(f, m) && searchMatches(q, m.phone, m.text)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const body = `<h1>WhatsApp</h1>
+<p class="sub">Mensajes entrantes por WhatsApp. El envío automático sigue desactivado hasta verificar la conexión -- aquí solo se lee y se ordena.</p>
+${filterPills("/crm/whatsapp", f, q, true)}
+${searchBox("/crm/whatsapp", f, q, "Buscar por número de teléfono")}
+${items.length > 0 ? bulkBar("/crm/whatsapp", f, q, items.length, true) : ""}
+${items.length === 0 ? `<div class="empty">No hay mensajes de WhatsApp en esta vista.</div>` : items.map((m) => `<div class="${msgRowClass(m, true)}" style="position:relative"><div class="info">
+${msgCheckbox("/crm/whatsapp", m.id)}
+<h3>${esc(m.phone)}</h3>
+<p class="meta"><span class="tag">WhatsApp directo</span> · ${esc(fmtDate(m.created_at))}</p>
+<p>${answeredTag(m)}${m.answered && m.delivered === false ? ` <span class="tag" style="background:#fde2e1;color:#7a1c17">No entregado (WhatsApp no conectado)</span>` : ""}${m.archived ? ` <span class="tag">Archivado</span>` : ""}</p>
+<div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
+${m.reply_text ? `<p style="margin-top:10px"><b>Respuesta de la IA:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.reply_text)}</div>` : ""}
+<form method="post" action="/crm/whatsapp/${esc(m.id)}">${phoneLink(m.phone)}
+${!m.read ? `<button class="btn light" type="submit" name="accion" value="marcar_leido">Marcar leído</button>` : ""}
+${!m.archived ? `<button class="btn light" type="submit" name="accion" value="archivar">Archivar</button>` : ""}
+${confirmButton("Eliminar", "eliminar", "danger", "¿Eliminar este mensaje? Se puede recuperar luego desde la Papelera.")}
+</form></div></div>`).join("")}`;
+  res.type("html").send(page("WhatsApp", me(res), body, msgOf(req)));
+});
+
+crm.post("/whatsapp/:id", (req, res) => {
+  const accion = String(req.body.accion ?? "");
+  const items = list<WhatsappMessage>("whatsapp_inbox");
+  const m = items.find((x) => x.id === req.params.id);
+  if (!m) return back(res, "/crm/whatsapp", "No encuentro ese mensaje");
+  if (accion === "eliminar") {
+    moveToTrash("whatsapp_inbox", m, `WhatsApp: ${m.phone}`, me(res).email);
+    save("whatsapp_inbox", items.filter((x) => x.id !== m.id));
+    return back(res, "/crm/whatsapp", "Mensaje movido a la papelera");
+  }
+  if (accion === "marcar_leido") m.read = true;
+  else if (accion === "archivar") m.archived = true;
+  save("whatsapp_inbox", items);
+  back(res, "/crm/whatsapp", "Hecho");
+});
+
+crm.post("/whatsapp-masivo", (req, res) => {
+  const f = msgFilterFromQuery(req);
+  const q = String(req.body.q ?? "").trim();
+  const accion = String(req.body.accion ?? "");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  const n = runBulkAction<WhatsappMessage>(
+    "whatsapp_inbox",
+    accion,
+    ids,
+    { f, q, search: (m) => searchMatches(q, m.phone, m.text) },
+    (m) => `WhatsApp: ${m.phone}`,
+    me(res).email,
+  );
+  back(res, "/crm/whatsapp", n === 0 ? "No había nada que hacer" : accion.startsWith("eliminar") ? `${n} mensaje(s) movido(s) a la papelera` : accion === "archivar" ? `${n} mensaje(s) archivado(s)` : `${n} mensaje(s) marcado(s) como leído`);
+});
+
+// ---------- Llamadas (bandeja completa -- solo lectura, sin "respondido") ----------
+crm.get("/llamadas", (req, res) => {
+  const f = msgFilterFromQuery(req);
+  const q = String(req.query.q ?? "").trim();
+  const all = list<CallAnalysis>("call_analyses");
+  const items = all.filter((m) => matchesMsgFilter(f, m) && searchMatches(q, m.from_number, m.summary)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const dur = (ms: number | null | undefined) => (ms == null ? "—" : `${Math.floor(ms / 60000)}:${String(Math.round((ms % 60000) / 1000)).padStart(2, "0")}`);
+  const body = `<h1>Llamadas</h1>
+<p class="sub">Llamadas atendidas por Miguel, con el resultado del análisis automático.</p>
+${filterPills("/crm/llamadas", f, q, false)}
+${searchBox("/crm/llamadas", f, q, "Buscar por número de teléfono")}
+${items.length > 0 ? bulkBar("/crm/llamadas", f, q, items.length, false) : ""}
+${items.length === 0 ? `<div class="empty">No hay llamadas en esta vista.</div>` : items.map((m) => `<div class="card ${m.needs_review ? "urgent" : ""} ${m.read ? "msg-read" : "msg-unread"}" style="position:relative"><div class="info">
+${msgCheckbox("/crm/llamadas", m.id)}
+<h3>${esc(m.from_number || "Número desconocido")}</h3>
+<p class="meta"><span class="tag">${esc(m.channel === "VOICE" ? "Voz" : "Chat")}</span> · Duración ${dur(m.duration_ms)} · ${esc(fmtDate(m.created_at))}</p>
+<p>${m.call_successful === false ? `<span class="tag" style="background:#fde2e1;color:#7a1c17">Con problemas</span>` : m.call_successful === true ? `<span class="tag" style="background:#e3f6e8;color:#1d6b3d">Correcta</span>` : `<span class="tag">Sin valorar</span>`}${m.needs_review ? ` <span class="tag" style="background:#fde2e1;color:#7a1c17">Revisar</span>` : ""}${m.archived ? ` <span class="tag">Archivada</span>` : ""}</p>
+${m.summary ? `<div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.summary)}</div>` : `<p class="empty" style="padding:10px 0">Sin resumen disponible.</p>`}
+<form method="post" action="/crm/llamadas/${esc(m.id)}">${phoneLink(m.from_number)}
+${!m.read ? `<button class="btn light" type="submit" name="accion" value="marcar_leido">Marcar leído</button>` : ""}
+${!m.archived ? `<button class="btn light" type="submit" name="accion" value="archivar">Archivar</button>` : ""}
+${confirmButton("Eliminar", "eliminar", "danger", "¿Eliminar esta llamada? Se puede recuperar luego desde la Papelera.")}
+</form></div></div>`).join("")}`;
+  res.type("html").send(page("Llamadas", me(res), body, msgOf(req)));
+});
+
+crm.post("/llamadas/:id", (req, res) => {
+  const accion = String(req.body.accion ?? "");
+  const items = list<CallAnalysis>("call_analyses");
+  const m = items.find((x) => x.id === req.params.id);
+  if (!m) return back(res, "/crm/llamadas", "No encuentro esa llamada");
+  if (accion === "eliminar") {
+    moveToTrash("call_analyses", m, `Llamada: ${m.from_number ?? "sin número"}`, me(res).email);
+    save("call_analyses", items.filter((x) => x.id !== m.id));
+    return back(res, "/crm/llamadas", "Llamada movida a la papelera");
+  }
+  if (accion === "marcar_leido") m.read = true;
+  else if (accion === "archivar") m.archived = true;
+  save("call_analyses", items);
+  back(res, "/crm/llamadas", "Hecho");
+});
+
+crm.post("/llamadas-masivo", (req, res) => {
+  const f = msgFilterFromQuery(req);
+  const q = String(req.body.q ?? "").trim();
+  const accion = String(req.body.accion ?? "");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  const n = runBulkAction<CallAnalysis>(
+    "call_analyses",
+    accion,
+    ids,
+    { f, q, search: (m) => searchMatches(q, m.from_number, m.summary) },
+    (m) => `Llamada: ${m.from_number ?? "sin número"}`,
+    me(res).email,
+  );
+  back(res, "/crm/llamadas", n === 0 ? "No había nada que hacer" : accion.startsWith("eliminar") ? `${n} llamada(s) movida(s) a la papelera` : accion === "archivar" ? `${n} llamada(s) archivada(s)` : `${n} llamada(s) marcada(s) como leída`);
+});
 
 // ---------- Clientes (solo lectura de la segmentación de Miguel) ----------
 crm.get("/clientes", (req, res) => {
@@ -1323,6 +1665,10 @@ const TRASH_LABELS: Record<string, string> = {
   appointments: "Visita",
   handoffs: "Aviso",
   alerts: "Alerta",
+  leads: "Cliente",
+  email_inbox: "Correo",
+  whatsapp_inbox: "WhatsApp",
+  call_analyses: "Llamada",
 };
 
 crm.get("/papelera", (req, res) => {

@@ -100,10 +100,21 @@ type InboxItem = {
   draft_note?: string;
   thread_id?: string;
   in_reply_to?: string;
+  // Módulo CRM mensajes/clientes (18/10/2026): "leído" y "respondido" son dos
+  // estados distintos -- un correo puede leerse sin que nadie (ni la IA) lo
+  // haya contestado. `answered_by` distingue si respondió la IA sola o una
+  // persona del equipo desde /crm/correos.
+  read?: boolean;
+  answered?: boolean;
+  answered_by?: "ia" | "equipo";
   created_at: string;
 };
 
-function recordInbox(email: InboundEmail, outcome: string, extra?: { portal?: string | null; draftNote?: string }) {
+function recordInbox(
+  email: InboundEmail,
+  outcome: string,
+  extra?: { portal?: string | null; draftNote?: string; answered?: boolean; answeredBy?: "ia" | "equipo" },
+) {
   const inbox = readCollection<InboxItem>("email_inbox");
   inbox.push({
     id: crypto.randomUUID(),
@@ -115,6 +126,8 @@ function recordInbox(email: InboundEmail, outcome: string, extra?: { portal?: st
     draft_note: extra?.draftNote,
     thread_id: email.threadId,
     in_reply_to: email.inReplyTo,
+    answered: extra?.answered ?? false,
+    answered_by: extra?.answered ? (extra?.answeredBy ?? "ia") : undefined,
     created_at: new Date().toISOString(),
   });
   writeCollection("email_inbox", inbox.slice(-500));
@@ -288,7 +301,14 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
   const error = delivery.error;
 
   const outcome = status === "failed" ? "send_failed" : status === "sent" ? "sent" : "queued_no_google";
-  recordInbox(email, outcome, { portal: portalInfo.portal });
+  // FALLO REAL detectado en la auditoría del 18/10/2026 (Fase 3/6: "no
+  // considerar un correo contestado solo porque el agente intentó
+  // procesarlo"): cuando SÍ se entregó de verdad (outcome "sent"), el correo
+  // nunca se marcaba `answered` -- se quedaba para siempre en Pendientes
+  // como si nadie hubiera contestado, aunque la IA ya lo hizo y se envió.
+  // Solo "sent" cuenta como respondido de verdad; "send_failed" y
+  // "queued_no_google" NO se marcan (no llegó al cliente).
+  recordInbox(email, outcome, { portal: portalInfo.portal, answered: outcome === "sent", answeredBy: "ia" });
   writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome, threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
 
   return { outcome, reply: body, error };

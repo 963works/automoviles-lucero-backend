@@ -277,6 +277,21 @@ app.post("/chat/message", requireAdminToken, async (req, res) => {
 // handleChatMessage(). Dedupe propio por mensaje (igual que email_processed)
 // porque un mensaje de WhatsApp puede reintentarse desde Meta/n8n.
 const MAX_WHATSAPP_PROCESSED_KEPT = 500;
+// Mismo registro que lee /crm/whatsapp (src/crm/app.ts) -- tipo local
+// duplicado a propósito, igual que ya se hace con email_inbox entre
+// email/agent.ts y crm/app.ts en este mismo repo.
+type WhatsappInboxRecord = {
+  id: string;
+  phone: string;
+  text: string;
+  reply_text?: string;
+  delivered?: boolean;
+  read?: boolean;
+  answered?: boolean;
+  answered_by?: "ia" | "equipo";
+  archived?: boolean;
+  created_at: string;
+};
 app.post("/channels/whatsapp/inbound", requireAdminToken, async (req, res) => {
   const b = req.body ?? {};
   if (typeof b.from !== "string" || typeof b.text !== "string" || !b.from.trim() || !b.text.trim()) {
@@ -311,15 +326,45 @@ app.post("/channels/whatsapp/inbound", requireAdminToken, async (req, res) => {
     [...processed, { key: dedupeKey, at: new Date().toISOString() }].slice(-MAX_WHATSAPP_PROCESSED_KEPT),
   );
 
+  // Módulo CRM mensajes/clientes (18/10/2026): registrar el mensaje entrante
+  // para que se vea en /crm/whatsapp -- puramente aditivo, en su propio
+  // try/catch para que un fallo aquí nunca toque la respuesta ya enviada
+  // arriba ni el resto de este webhook (que ya funcionaba de antes). No
+  // envía nada nuevo por WhatsApp: el envío sigue igual que siempre, esto
+  // solo deja constancia de lo que ya se mandó o se intentó mandar.
+  const whatsappInboxId = crypto.randomUUID();
+  try {
+    const inbox = readCollection<WhatsappInboxRecord>("whatsapp_inbox");
+    inbox.push({ id: whatsappInboxId, phone: from, text, read: false, answered: false, archived: false, created_at: new Date().toISOString() });
+    writeCollection("whatsapp_inbox", inbox.slice(-500));
+  } catch (err) {
+    console.error("[whatsapp] no se pudo registrar el mensaje entrante en el CRM:", err instanceof Error ? err.message : err);
+  }
+
   try {
     const result = await handleChatMessage(from, text, "WHATSAPP", from);
+    let delivered = false;
     if (isWhatsappConnected()) {
       const sent = await sendWhatsappText(from, result.reply);
+      delivered = sent.ok;
       if (!sent.ok) {
         console.error("[whatsapp] no se pudo enviar la respuesta:", sent.error);
       }
     } else {
       console.warn("[whatsapp] credenciales no conectadas -- respuesta generada pero NO enviada:", result.reply);
+    }
+    try {
+      const inbox = readCollection<WhatsappInboxRecord>("whatsapp_inbox");
+      const rec = inbox.find((m) => m.id === whatsappInboxId);
+      if (rec) {
+        rec.reply_text = result.reply;
+        rec.delivered = delivered;
+        rec.answered = true;
+        rec.answered_by = "ia";
+        writeCollection("whatsapp_inbox", inbox);
+      }
+    } catch (err) {
+      console.error("[whatsapp] no se pudo actualizar el registro del CRM:", err instanceof Error ? err.message : err);
     }
   } catch (err) {
     console.error("[whatsapp] inbound:", err instanceof Error ? err.message : err);
