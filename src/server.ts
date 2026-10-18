@@ -222,6 +222,10 @@ app.get("/debug/call_analyses", requireAdminToken, (_req, res) => {
   res.json(readCollection<unknown>("call_analyses").slice(-50));
 });
 
+app.get("/debug/studio_jobs", requireAdminToken, (_req, res) => {
+  res.json(readCollection<unknown>("studio_jobs").slice(-50));
+});
+
 app.get("/debug/alerts", requireAdminToken, (_req, res) => {
   res.json(readCollection<unknown>("alerts").slice(-50));
 });
