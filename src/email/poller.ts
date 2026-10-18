@@ -13,8 +13,18 @@ const BATCH = 10;
 // patrón de ráfaga es exactamente lo que los sistemas antiabuso de Gmail
 // penalizan, sin importar que el contenido tenga sentido. Una cuenta de
 // Gmail normal (no Workspace) es especialmente sensible a la velocidad de
-// envío, más que al volumen total. Espaciar cada envío es la defensa real.
-const SEND_SPACING_MS = 8000;
+// envío, más que al volumen total.
+//
+// Ampliado el mismo día a petición real ("con segundos de espera siempre,
+// como un humano, para evitar problemas"): una pausa fija e idéntica entre
+// cada correo (siempre exactamente 8,000s) es en sí misma una señal
+// robótica -- ningún humano contesta con esa regularidad perfecta. Ahora la
+// espera es aleatoria dentro de un rango realista, distinta cada vez.
+const MIN_SPACING_MS = 12_000;
+const MAX_SPACING_MS = 40_000;
+function humanSpacingMs(): number {
+  return MIN_SPACING_MS + Math.floor(Math.random() * (MAX_SPACING_MS - MIN_SPACING_MS));
+}
 let running = false;
 
 // Revisa la bandeja del negocio cada 3 minutos. Sin Google conectado no hace nada.
@@ -39,7 +49,7 @@ export function startEmailPoller() {
           inReplyTo: m.messageId,
           automated: m.automated,
         });
-        if (i < items.length - 1) await new Promise((r) => setTimeout(r, SEND_SPACING_MS));
+        if (i < items.length - 1) await new Promise((r) => setTimeout(r, humanSpacingMs()));
       }
     } catch (err) {
       console.error("[email] poll:", err);
