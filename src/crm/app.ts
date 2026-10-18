@@ -266,6 +266,31 @@ function extractWaLink(note: string | null | undefined): string | null {
   const m = note?.match(/https:\/\/wa\.me\/\d+/);
   return m ? m[0] : null;
 }
+// El motivo de la alerta siempre empieza con "Coches.net: "/"Wallapop: "
+// cuando lo genera email/agent.ts -- se separa para mostrar el portal como
+// etiqueta en color (a petición real, 18/10/2026: "que salga en color
+// como una tarjeta igual que urgente"), igual que ya se hace en Correos.
+function extractLeadingPortal(reason: string): { portal: string | null; rest: string } {
+  const m = reason.match(/^(Coches\.net|Wallapop|Milanuncios):\s*/i);
+  if (!m) return { portal: null, rest: reason };
+  return { portal: m[1] ?? null, rest: reason.slice(m[0].length) };
+}
+function normalizePhoneDigits(p: string | null | undefined): string {
+  return (p ?? "").replace(/\D/g, "");
+}
+// Si la alerta no trae nombre, se busca en Clientes por el mismo teléfono
+// (normalizado, con o sin "+") -- a petición real (18/10/2026: "que salga
+// el nombre"). Nunca se inventa: si tampoco hay lead con nombre, se queda
+// en el teléfono, nunca un nombre puesto a mano.
+function alertDisplayName(a: { name: string | null; lead_phone: string | null }): string {
+  if (a.name) return a.name;
+  if (a.lead_phone) {
+    const digits = normalizePhoneDigits(a.lead_phone);
+    const lead = digits ? list<Lead>("leads").find((l) => normalizePhoneDigits(l.phone) === digits) : undefined;
+    if (lead?.name) return lead.name;
+  }
+  return a.lead_phone || "Cliente sin nombre";
+}
 function confirmButton(label: string, action: string, extra: string, question: string): string {
   return `<button class="btn ${extra}" name="accion" value="${esc(action)}" onclick="return confirm('${esc(question)}')">${esc(label)}</button>`;
 }
@@ -756,11 +781,12 @@ crm.get("/", (req, res) => {
             // asi") -- se extrae y se muestra como botón real de WhatsApp,
             // en vez de una URL suelta dentro del párrafo.
             const waLink = extractWaLink(a.reason);
-            const reasonClean = waLink ? a.reason.replace(waLink, "").replace(/\s*[:.]\s*$/, "").trim() : a.reason;
+            const afterWaStrip = waLink ? a.reason.replace(waLink, "").replace(/\s*[:.]\s*$/, "").trim() : a.reason;
+            const { portal, rest: reasonClean } = extractLeadingPortal(afterWaStrip);
             return `<div class="card" style="position:relative"><div class="info">
 ${me(res).role === "admin" ? simpleCheckbox("alertas-bulk", a.id) : ""}
-<h3>${esc(a.name || a.lead_phone || "Cliente sin nombre")}</h3>
-<p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : a.kind === "reserva_pendiente" ? "R" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : a.kind === "reserva_pendiente" ? "RESERVA 500€" : "Urgente"}</span> ${esc(fmtDate(a.created_at))}</p>
+<h3>${esc(alertDisplayName(a))}</h3>
+<p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : a.kind === "reserva_pendiente" ? "R" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : a.kind === "reserva_pendiente" ? "RESERVA 500€" : "Urgente"}</span> ${portal ? platformTag(portal) : ""} ${esc(fmtDate(a.created_at))}</p>
 <p>${esc(reasonClean)}</p>
 <p>Aviso por correo: ${esc(emailLabels[a.email_status] ?? a.email_status)}</p>
 ${phoneLink(a.lead_phone)}${waLink ? waButton(waLink.replace("https://wa.me/", ""), "") : ""}
