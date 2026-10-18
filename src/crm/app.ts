@@ -176,6 +176,26 @@ function leadDisplayName(l: Lead): string {
   if (l.vehicle_interest) return `Interesado/a en ${l.vehicle_interest}`;
   return "Sin datos de contacto";
 }
+// Igual que leadDisplayName, pero para sitios que solo tienen phone/name
+// sueltos (Avisos, Pendientes) y no el Lead completo -- a petición real,
+// 18/10/2026: "eliminar estos códigos raros que salen en cliente, mejor
+// pon el nombre, no quiero códigos que confundan". Busca en Clientes por
+// el mismo contacto antes de rendirse; nunca inventa un nombre.
+function findLeadByContact(contact: string): Lead | undefined {
+  if (contact.includes("@")) return list<Lead>("leads").find((l) => l.phone === contact);
+  const digits = normalizePhoneDigits(contact);
+  if (!digits) return undefined;
+  return list<Lead>("leads").find((l) => normalizePhoneDigits(l.phone) === digits);
+}
+function contactLabel(phone: string | null | undefined, name: string | null | undefined): string {
+  if (name) return name;
+  if (!phone) return "Cliente sin contacto";
+  if (!isCochesNetRelay(phone)) return phone;
+  const lead = findLeadByContact(phone);
+  if (lead?.name) return lead.name;
+  if (lead?.vehicle_interest) return `Interesado/a en ${lead.vehicle_interest}`;
+  return "Cliente de Coches.net (sin nombre)";
+}
 
 // Frase con lo que quiere el cliente, sacada de sus visitas y reservas reales.
 function situation(l: Lead): string {
@@ -673,7 +693,7 @@ ${simpleCheckbox("citas-bulk", a.id)}
 <div class="when"><span>${esc(d.weekday)}</span><b>${esc(d.day)}</b><span>${esc(d.month)}</span><em>${esc(a.requested_time ?? "")}</em></div>
 <div class="info"><h3>${esc(veh)}</h3>
 <p><span class="tag">${esc(APPOINTMENT_TEXT[a.status] ?? a.status)}</span>${a.appointment_type ? `<span class="tag">${esc(a.appointment_type)}</span>` : ""}</p>
-<p>Cliente: <b>${esc(a.lead_phone ?? "sin contacto")}</b></p>
+<p>Cliente: <b>${esc(contactLabel(a.lead_phone, null))}</b></p>
 ${a.notes ? `<p>${esc(a.notes)}</p>` : ""}
 <form method="post" action="/crm/citas/${esc(a.id)}">${actions}
 ${phoneLink(a.lead_phone)}${whatsapp}
@@ -711,7 +731,7 @@ function reservationCard(r: Reservation, user: CrmUser): string {
 ${canBulkDelete ? simpleCheckbox("reservas-bulk", r.id) : ""}
 <h3>${esc(veh)}</h3>
 <p><span class="tag">${esc(sold ? "Vendido" : RESERVATION_TEXT[r.status] ?? r.status)}</span><span class="tag">${r.amount_eur} €</span></p>
-<p>Cliente: <b>${esc(r.lead_phone ?? "sin contacto")}</b></p>
+<p>Cliente: <b>${esc(contactLabel(r.lead_phone, null))}</b></p>
 <p>Desde el ${esc(fmtDate(r.created_at))}${r.verified_by ? ` · confirmada por ${esc(r.verified_by)}` : ""}</p>
 <form method="post" action="/crm/reservas/${esc(r.id)}">${actions.join("")}${phoneLink(r.lead_phone)}${whatsapp}
 <div class="row"><div><label>✏️ Teléfono del cliente</label><input name="telefono" value="${esc(r.lead_phone ?? "")}"></div>
@@ -1017,13 +1037,24 @@ crm.get("/pendientes", (req, res) => {
 <p class="sub">Aquí aparece lo que Miguel no puede resolver solo. Cuando lo hayas atendido, pulsa el botón.</p>
 <h2>Avisos de Miguel (${handoffs.length})</h2>
 ${isAdmin && handoffs.length > 0 ? simpleBulkBar("avisos-bulk", "/crm/avisos-masivo", handoffs.length, "¿Eliminar los avisos seleccionados? Úsalo solo para avisos ya atendidos; se pueden recuperar luego desde la Papelera.") : ""}
-${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => `<div class="card ${h.reason_type === "reserva" ? "urgent" : h.urgency === "alta" ? "urgent" : "pending"}" style="position:relative"><div class="info">
+${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => {
+  // Misma limpieza ya aplicada a las alertas de Hoy (18/10/2026, "estas
+  // fichas de pendiente organizalas bien"): el motivo a veces trae el
+  // portal y un enlace wa.me incrustados como texto plano -- se separan
+  // en su propia etiqueta/botón en vez de un título larguísimo con una
+  // URL suelta dentro.
+  const reasonRaw = h.reason ?? "Aviso";
+  const waLink = extractWaLink(reasonRaw);
+  const afterWaStrip = waLink ? reasonRaw.replace(waLink, "").replace(/\s*[:.]\s*$/, "").trim() : reasonRaw;
+  const { portal, rest: reasonClean } = extractLeadingPortal(afterWaStrip);
+  return `<div class="card ${h.reason_type === "reserva" ? "urgent" : h.urgency === "alta" ? "urgent" : "pending"}" style="position:relative"><div class="info">
 ${isAdmin ? simpleCheckbox("avisos-bulk", h.id) : ""}
-<h3>${esc(h.reason ?? "Aviso")}</h3>
-<p><span class="tag ${h.reason_type === "reserva" || h.reason_type === "compra_inmediata" || h.urgency === "alta" ? "t-hot" : ""}">${h.reason_type === "reserva" ? "RESERVA 500€" : h.reason_type === "compra_inmediata" ? "Compra inmediata" : h.urgency === "alta" ? "Urgente" : "Normal"}</span></p>
-<p>Cliente: <b>${esc(h.lead_name ? `${h.lead_name} (${h.lead_phone ?? "sin teléfono"})` : h.lead_phone ?? "sin contacto")}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
-<form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}${isAdmin ? `<button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar este aviso para siempre? Úsalo solo para pruebas, no para avisos reales ya atendidos.')">Eliminar</button>` : ""}</form>
-</div></div>`).join("")}
+<h3>${esc(reasonClean || "Aviso")}</h3>
+<p><span class="tag ${h.reason_type === "reserva" || h.reason_type === "compra_inmediata" || h.urgency === "alta" ? "t-hot" : ""}">${h.reason_type === "reserva" ? "RESERVA 500€" : h.reason_type === "compra_inmediata" ? "Compra inmediata" : h.urgency === "alta" ? "Urgente" : "Normal"}</span> ${portal ? platformTag(portal) : ""}</p>
+<p>Cliente: <b>${esc(contactLabel(h.lead_phone, h.lead_name))}${h.lead_name && h.lead_phone && !isCochesNetRelay(h.lead_phone) ? ` (${esc(h.lead_phone)})` : ""}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
+<form method="post" action="/crm/avisos/${esc(h.id)}"><button class="btn ok" type="submit">Ya lo he atendido</button>${phoneLink(h.lead_phone)}${waLink ? waButton(waLink.replace("https://wa.me/", ""), "") : ""}${isAdmin ? `<button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar este aviso para siempre? Úsalo solo para pruebas, no para avisos reales ya atendidos.')">Eliminar</button>` : ""}</form>
+</div></div>`;
+}).join("")}
 <h2>Correos para contestar (${mails.length})</h2>
 ${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` : mails.map((m) => `<div class="card ${m.outcome === "pendiente_gestion_portal" ? "urgent" : "pending"}"><div class="info">
 <h3>${esc(m.subject || "(sin asunto)")}</h3>
