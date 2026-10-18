@@ -135,12 +135,46 @@ const TEMP: Record<string, { label: string; cls: string; help: string; letter: s
 // con origin "WHATSAPP" (confirmado en data/leads.json de producción) les
 // faltaba entrada aquí -- se mostraban como "Origen sin registrar" aunque
 // el dato correcto SÍ estaba guardado. Lo mismo le faltaba a "FACEBOOK".
-const ORIGIN: Record<string, string> = { VOICE: "Voz", CHAT: "Chat", EMAIL: "Correo", WHATSAPP: "WhatsApp", FACEBOOK: "Facebook", MANUAL: "Añadido a mano" };
+// "coches.net" (en minúsculas, el nombre del portal) añadido tras ver datos
+// reales de producción (18/10/2026): algún lead real tiene ese valor exacto
+// en `channel`/`origin` en vez de un canal real -- se muestra honestamente
+// tal cual está guardado, sin tocar de dónde viene ese dato.
+const ORIGIN: Record<string, string> = { VOICE: "Voz", CHAT: "Chat", EMAIL: "Correo", WHATSAPP: "WhatsApp", FACEBOOK: "Facebook", MANUAL: "Añadido a mano", "coches.net": "Coches.net" };
 // Plataforma que originó el contacto (distinta del canal): Coches.net,
 // Wallapop... Antes de mostrar un dato de origen hay que decir
 // "Origen desconocido" en vez de inventarlo (encargo del cliente, Fase 2).
 function platformLabel(portal: string | null | undefined): string {
   return portal && portal.trim() ? portal : "Origen desconocido";
+}
+// Etiqueta de plataforma EN COLOR (a petición real, 18/10/2026: "que salga
+// también como una tarjeta de color") -- un color real y reconocible por
+// portal en vez del tag gris neutro que usa el resto del CRM.
+const PORTAL_TAG_STYLE: Record<string, string> = {
+  "coches.net": "background:#dbeafe;color:#1e3a8a",
+  wallapop: "background:#dcfce7;color:#14532d",
+  milanuncios: "background:#ffe4d6;color:#7c2d12",
+};
+function platformTag(portal: string | null | undefined): string {
+  const label = platformLabel(portal);
+  const style = PORTAL_TAG_STYLE[(portal ?? "").trim().toLowerCase()] ?? "background:#e2e8f0;color:#1e293b";
+  return `<span class="tag" style="${style}">${esc(label)}</span>`;
+}
+// Identificador útil para mostrar cuando falta el nombre (encargo real,
+// Fase 2: "si no se conoce el nombre, mostrar un identificador útil, como
+// su número de teléfono, sin inventar datos"). Dato real de producción
+// (18/10/2026): varios leads de Coches.net no tienen ni nombre ni un
+// teléfono real -- su "phone" es un correo-relay anónimo del propio portal
+// (tipo bec672e7-...@contactos.coches.net), que no identifica a nadie para
+// una persona. Para esos casos concretos se prioriza el coche de interés,
+// que sí dice algo útil; nunca se inventa un nombre.
+function isCochesNetRelay(contact: string | null | undefined): boolean {
+  return Boolean(contact && contact.includes("@") && /coches\.net$/i.test(contact));
+}
+function leadDisplayName(l: Lead): string {
+  if (l.name) return l.name;
+  if (l.phone && !isCochesNetRelay(l.phone)) return l.phone;
+  if (l.vehicle_interest) return `Interesado/a en ${l.vehicle_interest}`;
+  return "Sin datos de contacto";
 }
 
 // Frase con lo que quiere el cliente, sacada de sus visitas y reservas reales.
@@ -658,9 +692,11 @@ function leadCard(l: Lead, user: CrmUser): string {
   const del = user.role === "admin"
     ? `<form method="post" action="/crm/clientes/${esc(l.id)}" style="display:inline">${confirmButton("Eliminar", "eliminar", "danger", `¿Eliminar a "${l.name || l.phone || "este cliente"}"? Se puede restaurar luego desde la Papelera.`)}</form>`
     : "";
-  return `<div class="card"><div class="info">
-<h3>${esc(l.name || l.phone || "Sin nombre")}</h3>
-<p><span class="tletra ${t.cls}">${t.letter}</span><span class="tag ${t.cls}">${esc(t.label)}</span> <span class="origen">${esc(ORIGIN[l.origin ?? l.channel ?? ""] ?? "Origen sin registrar")}</span>${l.do_not_contact ? `<span class="tag">No volver a escribir</span>` : ""}</p>
+  const sel = user.role === "admin" ? `<input class="msgsel" type="checkbox" name="ids" value="${esc(l.id)}" form="clientes-bulk" style="position:absolute;top:18px;right:20px">` : "";
+  return `<div class="card" style="position:relative"><div class="info">
+${sel}
+<h3>${esc(leadDisplayName(l))}</h3>
+<p><span class="tletra ${t.cls}">${t.letter}</span><span class="tag ${t.cls}">${esc(t.label)}</span> <span class="origen">${esc(ORIGIN[l.origin ?? l.channel ?? ""] ?? "Origen sin registrar")}</span>${!l.name ? `<span class="tag" style="background:#fde2e1;color:#7a1c17">Sin nombre</span>` : ""}${l.do_not_contact ? `<span class="tag">No volver a escribir</span>` : ""}</p>
 <p><b>${esc(situation(l))}</b></p>
 <p>Último contacto: ${esc(fmtDate(l.updated_at ?? l.created_at))}</p>
 <a class="btn" href="/crm/clientes/${esc(l.id)}">✏️ Editar / ver ficha</a>${phoneLink(l.phone)}${whatsapp}${del}
@@ -1087,7 +1123,7 @@ ${items.length > 0 ? bulkBar("/crm/correos", f, q, items.length, true) : ""}
 ${items.length === 0 ? `<div class="empty">No hay correos en esta vista.</div>` : items.map((m) => `<div class="${msgRowClass(m, true)}" style="position:relative"><div class="info">
 ${msgCheckbox("/crm/correos", m.id)}
 <h3>${esc(m.subject || "(sin asunto)")}</h3>
-<p class="meta">De: <b>${esc(m.from)}</b> · <span class="tag">${esc(platformLabel(m.portal))}</span> · ${esc(fmtDate(m.created_at))}</p>
+<p class="meta">De: <b>${esc(m.from)}</b> · ${platformTag(m.portal)} · ${esc(fmtDate(m.created_at))}</p>
 <p>${answeredTag(m)}${m.archived ? ` <span class="tag">Archivado</span>` : ""}</p>
 <div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
 ${m.draft_note ? `<p style="margin-top:10px"><b>${m.outcome === "tope_diario_alcanzado" ? "Respuesta ya redactada" : `Borrador para copiar en ${esc(platformLabel(m.portal))}`}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
@@ -1240,6 +1276,14 @@ crm.get("/clientes", (req, res) => {
   const t = typeof req.query.t === "string" && TEMP[req.query.t] ? req.query.t : "todos";
   const leads = list<Lead>("leads").filter((l) => t === "todos" || l.temperature === t).sort((a, b) => (b.updated_at ?? b.created_at).localeCompare(a.updated_at ?? a.created_at));
   const pill = (k: string, label: string, cls = "") => `<a href="/crm/clientes?t=${k}" class="tag ${cls}" style="text-decoration:none;padding:10px 16px;${t === k ? "outline:4px solid #1d2b44" : ""}">${label}</a>`;
+  const isAdmin = me(res).role === "admin";
+  const bulk = isAdmin && leads.length > 0
+    ? `<form id="clientes-bulk" method="post" action="/crm/clientes-masivo"><input type="hidden" name="t" value="${esc(t)}"></form>
+<div class="bulkbar">
+<label><input class="msgsel" type="checkbox" onchange="toggleAllMsgs(this,'ids')"> Seleccionar todos (${leads.length})</label>
+<button class="btn danger" type="submit" form="clientes-bulk" name="accion" value="eliminar_seleccionados" onclick="return confirm('¿Eliminar los clientes seleccionados? Se pueden recuperar luego desde la Papelera.')">Eliminar seleccionados</button>
+</div>`
+    : "";
   const body = `<h1>Clientes</h1>
 <p class="sub">Miguel anota solo lo que quiere cada cliente. Tú solo lo lees y llamas si hace falta.</p>
 <div class="box"><h3 style="margin-top:0">Añadir un cliente a mano</h3>
@@ -1249,6 +1293,7 @@ crm.get("/clientes", (req, res) => {
 <label>Coche de interés</label><input name="vehicle_interest">
 <button class="btn ok" type="submit">Añadir cliente</button></form></div>
 <div class="legend">${pill("todos", "Todos")} ${pill("HOT", "Caliente", "t-hot")} ${pill("WARM", "Tibio", "t-warm")} ${pill("COLD", "Frío", "t-cold")}</div>
+${bulk}
 ${leads.length === 0 ? `<div class="empty">Todavía no hay clientes en esta lista.</div>` : leads.map((l) => leadCard(l, me(res))).join("")}`;
   res.type("html").send(page("Clientes", me(res), body, msgOf(req)));
 });
@@ -1330,6 +1375,22 @@ crm.post("/clientes/:id", (req, res) => {
   lead.updated_at = now();
   save("leads", leads);
   back(res, `/crm/clientes/${lead.id}`, accion === "guardar" ? "Cambios guardados" : accion === "no_contactar" ? "Listo: no le escribiremos más" : "Listo: sí se le puede escribir");
+});
+
+// Eliminar varios clientes a la vez (a petición real, 18/10/2026: "la
+// selección... donde selecciona cada tarjeta de cada cliente para poder
+// borrar todo"). Mismo patrón que Correos/WhatsApp/Llamadas: papelera
+// recuperable, nunca borrado directo -- y solo el administrador, igual que
+// ya exigía el borrado individual de clientes.
+crm.post("/clientes-masivo", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm/clientes", "Solo el administrador puede eliminar clientes");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  if (ids.length === 0) return back(res, "/crm/clientes", "No seleccionaste ningún cliente");
+  const leads = list<Lead>("leads");
+  const targets = leads.filter((l) => ids.includes(l.id));
+  for (const l of targets) moveToTrash("leads", l, `Cliente: ${l.name || l.phone || "sin nombre"}`, me(res).email);
+  save("leads", leads.filter((l) => !ids.includes(l.id)));
+  back(res, "/crm/clientes", targets.length === 0 ? "No había nada que hacer" : `${targets.length} cliente(s) movido(s) a la papelera`);
 });
 
 // ---------- Coches ----------
