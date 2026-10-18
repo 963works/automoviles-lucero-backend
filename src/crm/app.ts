@@ -747,9 +747,11 @@ crm.get("/", (req, res) => {
   };
   const alertBlock = alerts.length
     ? `<div class="msg" style="background:#fdecea;border-color:#c62828"><b>Llamar ya (${alerts.length})</b></div>` +
+      (me(res).role === "admin" ? simpleBulkBar("alertas-bulk", "/crm/alertas-masivo", alerts.length, "¿Eliminar las alertas seleccionadas? Úsalo solo para pruebas; se pueden recuperar luego desde la Papelera.") : "") +
       alerts
         .map(
-          (a) => `<div class="card"><div class="info">
+          (a) => `<div class="card" style="position:relative"><div class="info">
+${me(res).role === "admin" ? simpleCheckbox("alertas-bulk", a.id) : ""}
 <h3>${esc(a.name || a.lead_phone || "Cliente sin nombre")}</h3>
 <p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : a.kind === "reserva_pendiente" ? "R" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : a.kind === "reserva_pendiente" ? "RESERVA 500€" : "Urgente"}</span> ${esc(a.reason)}</p>
 <p>Aviso por correo: ${esc(emailLabels[a.email_status] ?? a.email_status)}</p>
@@ -774,6 +776,7 @@ ${me(res).role === "admin" ? `<form method="post" action="/crm/alertas/${esc(a.i
 </div>
 ${alertBlock}
 ${todoBlock}
+${me(res).role === "admin" && todayAppts.length + upcoming.length > 0 ? simpleBulkBar("citas-bulk", "/crm/citas-masivo", todayAppts.length + upcoming.length, "¿Eliminar las visitas seleccionadas? Se pueden recuperar luego desde la Papelera.") : ""}
 <h2>Visitas de hoy</h2>${todayAppts.length === 0 ? `<div class="empty">Hoy no hay visitas.</div>` : todayAppts.map(apptCard).join("")}
 <h2>Próximas visitas</h2>${upcoming.length === 0 ? `<div class="empty">No hay visitas próximas.</div>` : upcoming.map(apptCard).join("")}
 <h2>Reservas que hay que atender</h2>${toAttend.length === 0 ? `<div class="empty">No hay reservas esperando.</div>` : toAttend.map((r) => reservationCard(r, me(res))).join("")}`;
@@ -1797,6 +1800,21 @@ crm.post("/alertas/:id", (req, res) => {
   back(res, "/crm", "Aviso marcado como atendido");
 });
 
+// Borrado masivo de alertas (18/10/2026, "el borrar masivo lo quiero en
+// todas las secciones") -- mismo patrón que el individual: se quita de
+// alerts y se guarda en la papelera, nunca se pierde de verdad.
+crm.post("/alertas-masivo", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm", "Solo el administrador puede eliminar alertas");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  if (ids.length === 0) return back(res, "/crm", "No seleccionaste ninguna alerta");
+  const rows = list<AlertRow>("alerts");
+  const targets = rows.filter((a) => ids.includes(a.id));
+  for (const a of targets) {
+    if (deleteAlert(a.id)) moveToTrash("alerts", a, `Alerta: ${a.reason} (${a.name ?? a.lead_phone ?? "sin contacto"})`, me(res).email);
+  }
+  back(res, "/crm", targets.length === 0 ? "No había nada que hacer" : `${targets.length} alerta(s) movida(s) a la papelera`);
+});
+
 // ---------- Papelera (solo administrador) ----------
 const TRASH_LABELS: Record<string, string> = {
   reservations: "Reserva",
@@ -1812,9 +1830,19 @@ const TRASH_LABELS: Record<string, string> = {
 crm.get("/papelera", (req, res) => {
   if (me(res).role !== "admin") return back(res, "/crm", "Esta sección es solo para el administrador");
   const items = listTrash();
+  const bulk = items.length > 0
+    ? `<form id="papelera-bulk" method="post" action="/crm/papelera-masivo"></form>
+<div class="bulkbar">
+<label><input class="msgsel" type="checkbox" onchange="toggleAllMsgs(this,'ids')"> Seleccionar todos (${items.length})</label>
+<button class="btn ok" type="submit" form="papelera-bulk" name="accion" value="restaurar_seleccionados">Restaurar seleccionados</button>
+<button class="btn danger" type="submit" form="papelera-bulk" name="accion" value="eliminar_seleccionados" onclick="return confirm('¿Eliminar para siempre los seleccionados? Ya no se podrán recuperar.')">Eliminar definitivamente los seleccionados</button>
+</div>`
+    : "";
   const body = `<h1>Papelera</h1>
 <p class="sub">Aquí quedan las reservas, visitas, avisos y alertas que se eliminaron -- nada se borra para siempre hasta que lo confirmes aquí.</p>
-${items.length === 0 ? `<div class="empty">La papelera está vacía.</div>` : items.map((t) => `<div class="card"><div class="info">
+${bulk}
+${items.length === 0 ? `<div class="empty">La papelera está vacía.</div>` : items.map((t) => `<div class="card" style="position:relative"><div class="info">
+${simpleCheckbox("papelera-bulk", t.id)}
 <h3>${esc(t.label)}</h3>
 <p><span class="tag">${esc(TRASH_LABELS[t.collection] ?? t.collection)}</span></p>
 <p>Eliminado por ${esc(t.deleted_by)} el ${esc(fmtDate(t.deleted_at))}</p>
@@ -1838,6 +1866,25 @@ crm.post("/papelera/:id", (req, res) => {
     return back(res, "/crm/papelera", "Eliminado para siempre");
   }
   back(res, "/crm/papelera", "No entendí esa acción");
+});
+
+// Acciones masivas de Papelera (18/10/2026, "el borrar masivo lo quiero en
+// todas las secciones") -- restaurar o eliminar definitivamente varios a la
+// vez, mismas reglas que una por una.
+crm.post("/papelera-masivo", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm", "Solo el administrador puede gestionar la papelera");
+  const accion = String(req.body.accion ?? "");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  if (ids.length === 0) return back(res, "/crm/papelera", "No seleccionaste nada");
+  let done = 0;
+  for (const id of ids) {
+    if (accion === "restaurar_seleccionados") {
+      if (restoreFromTrash(id)) done++;
+    } else if (accion === "eliminar_seleccionados") {
+      if (purgeFromTrash(id)) done++;
+    }
+  }
+  back(res, "/crm/papelera", done === 0 ? "No había nada que hacer" : accion === "restaurar_seleccionados" ? `${done} elemento(s) restaurado(s)` : `${done} elemento(s) eliminado(s) para siempre`);
 });
 
 // ---------- Lucero Studio AI (16/10/2026) ----------
