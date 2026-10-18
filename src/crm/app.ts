@@ -643,7 +643,8 @@ function apptCard(a: Appointment): string {
     // confirmar también hay que poder limpiarla sin cancelarla antes.
     confirmButton("🗑️", "eliminar", "light", "¿Eliminar esta visita para siempre? Se puede restaurar luego desde la Papelera."),
   ].join("");
-  return `<div class="card ${tone}" id="c-${esc(a.id)}">
+  return `<div class="card ${tone}" id="c-${esc(a.id)}" style="position:relative">
+${simpleCheckbox("citas-bulk", a.id)}
 <div class="when"><span>${esc(d.weekday)}</span><b>${esc(d.day)}</b><span>${esc(d.month)}</span><em>${esc(a.requested_time ?? "")}</em></div>
 <div class="info"><h3>${esc(veh)}</h3>
 <p><span class="tag">${esc(APPOINTMENT_TEXT[a.status] ?? a.status)}</span>${a.appointment_type ? `<span class="tag">${esc(a.appointment_type)}</span>` : ""}</p>
@@ -680,7 +681,9 @@ function reservationCard(r: Reservation, user: CrmUser): string {
   const whatsapp = r.status === "pending_payment"
     ? waButton(r.lead_phone, `Hola, le escribe Automóviles Lucero. Para apartar el ${veh} necesitamos 500 €. Cuando haga el pago, envíenos el justificante por aquí. Gracias.`)
     : "";
-  return `<div class="card ${tone}" id="r-${esc(r.id)}"><div class="info">
+  const canBulkDelete = (r.status === "cancelled" || r.status === "expired") && user.role === "admin";
+  return `<div class="card ${tone}" id="r-${esc(r.id)}" style="position:relative"><div class="info">
+${canBulkDelete ? simpleCheckbox("reservas-bulk", r.id) : ""}
 <h3>${esc(veh)}</h3>
 <p><span class="tag">${esc(sold ? "Vendido" : RESERVATION_TEXT[r.status] ?? r.status)}</span><span class="tag">${r.amount_eur} €</span></p>
 <p>Cliente: <b>${esc(r.lead_phone ?? "sin contacto")}</b></p>
@@ -824,6 +827,7 @@ crm.get("/citas", (req, res) => {
   const body = `<h1>Visitas</h1>
 <p class="sub">Aquí ves los días y las horas en que vendrán los clientes a ver un coche.</p>
 <p>${pill("todas", "Todas")} ${pill("pendientes", "Por confirmar")} ${pill("confirmadas", "Confirmadas")} <a class="link noprint" href="/crm/semana">Ver la semana para imprimir</a></p>
+${items.length > 0 ? simpleBulkBar("citas-bulk", "/crm/citas-masivo", items.length, "¿Eliminar las visitas seleccionadas? Se pueden recuperar luego desde la Papelera.") : ""}
 ${items.length === 0 ? `<div class="empty">No hay visitas en esta lista.</div>` : items.map(apptCard).join("")}`;
   res.type("html").send(page("Visitas", me(res), body, msgOf(req)));
 });
@@ -858,10 +862,27 @@ crm.post("/citas/:id", (req, res) => {
   back(res, "/crm/citas", accion === "confirmar" ? "Visita confirmada" : accion === "cancelar" ? "Visita cancelada" : "Día y hora cambiados");
 });
 
+// Borrado masivo (a petición real, 18/10/2026: "el borrar masivo lo quiero
+// en todas las secciones"). Mismas reglas que el borrado individual: solo
+// administrador, papelera recuperable.
+crm.post("/citas-masivo", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm/citas", "Solo el administrador puede eliminar visitas");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  if (ids.length === 0) return back(res, "/crm/citas", "No seleccionaste ninguna visita");
+  const appts = list<Appointment>("appointments");
+  const targets = appts.filter((a) => ids.includes(a.id));
+  for (const a of targets) moveToTrash("appointments", a, `Visita: ${vehicleName(a.vehicle_id)} (${a.lead_phone ?? "sin contacto"})`, me(res).email);
+  save("appointments", appts.filter((a) => !ids.includes(a.id)));
+  back(res, "/crm/citas", targets.length === 0 ? "No había nada que hacer" : `${targets.length} visita(s) movida(s) a la papelera`);
+});
+
 // ---------- Reservas ----------
 crm.get("/reservas", (req, res) => {
   const reservations = list<Reservation>("reservations").sort((a, b) => b.created_at.localeCompare(a.created_at));
   const available = currentVehicles().filter((v) => getOfficialStatus(v.id) === "AVAILABLE");
+  // Solo las cerradas (canceladas/caducadas) se pueden borrar -- mismo
+  // criterio que el borrado individual, ninguna reserva viva se cuenta.
+  const bulkEligible = me(res).role === "admin" ? reservations.filter((r) => r.status === "cancelled" || r.status === "expired").length : 0;
   const body = `<h1>Reservas</h1>
 <p class="sub">Una reserva aparta un coche con 500 €. Cuando el cliente paga, compruébalo y pulsa "Confirmar la reserva".</p>
 <div class="box"><h3 style="margin-top:0">Hacer una reserva a mano</h3>
@@ -869,6 +890,7 @@ crm.get("/reservas", (req, res) => {
 <label>Coche</label><select name="vehicle_id">${available.map((v) => option(v.id, `${vehicleName(v.id)} · ${priceOf(v.id)} €`, "")).join("")}</select>
 <label>Teléfono o correo del cliente</label><input name="contacto" required>
 <button class="btn ok" type="submit">Crear la reserva</button></form></div>
+${bulkEligible > 0 ? simpleBulkBar("reservas-bulk", "/crm/reservas-masivo", bulkEligible, "¿Eliminar las reservas canceladas/caducadas seleccionadas? Se pueden recuperar luego desde la Papelera.") : ""}
 ${reservations.length === 0 ? `<div class="empty">Todavía no hay reservas.</div>` : reservations.map((r) => reservationCard(r, me(res))).join("")}`;
   res.type("html").send(page("Reservas", me(res), body, msgOf(req)));
 });
@@ -927,6 +949,21 @@ crm.post("/reservas/:id", (req, res) => {
   back(res, "/crm/reservas", "No entendí esa acción");
 });
 
+// Borrado masivo (18/10/2026, "el borrar masivo lo quiero en todas las
+// secciones") -- mismo criterio que el individual: solo canceladas o
+// caducadas, nunca una reserva viva, solo administrador.
+crm.post("/reservas-masivo", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm/reservas", "Solo el administrador puede eliminar reservas");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  if (ids.length === 0) return back(res, "/crm/reservas", "No seleccionaste ninguna reserva");
+  const reservations = list<Reservation>("reservations");
+  const targets = reservations.filter((r) => ids.includes(r.id) && (r.status === "cancelled" || r.status === "expired"));
+  for (const r of targets) moveToTrash("reservations", r, `Reserva: ${vehicleName(r.vehicle_id)} (${r.lead_phone ?? "sin contacto"})`, me(res).email);
+  const targetIds = new Set(targets.map((t) => t.id));
+  save("reservations", reservations.filter((r) => !targetIds.has(r.id)));
+  back(res, "/crm/reservas", targets.length === 0 ? "No había nada que hacer (solo se pueden borrar canceladas o caducadas)" : `${targets.length} reserva(s) movida(s) a la papelera`);
+});
+
 // ---------- Pendientes (avisos de Miguel y correos) ----------
 // Para el timbre (ver script en page()): lista de IDs de alertas urgentes
 // activas ahora mismo, para que el navegador detecte cuáles son nuevas.
@@ -941,7 +978,9 @@ crm.get("/pendientes", (req, res) => {
   const body = `<h1>Pendientes</h1>
 <p class="sub">Aquí aparece lo que Miguel no puede resolver solo. Cuando lo hayas atendido, pulsa el botón.</p>
 <h2>Avisos de Miguel (${handoffs.length})</h2>
-${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => `<div class="card ${h.reason_type === "reserva" ? "urgent" : h.urgency === "alta" ? "urgent" : "pending"}"><div class="info">
+${isAdmin && handoffs.length > 0 ? simpleBulkBar("avisos-bulk", "/crm/avisos-masivo", handoffs.length, "¿Eliminar los avisos seleccionados? Úsalo solo para avisos ya atendidos; se pueden recuperar luego desde la Papelera.") : ""}
+${handoffs.length === 0 ? `<div class="empty">No hay avisos.</div>` : handoffs.map((h) => `<div class="card ${h.reason_type === "reserva" ? "urgent" : h.urgency === "alta" ? "urgent" : "pending"}" style="position:relative"><div class="info">
+${isAdmin ? simpleCheckbox("avisos-bulk", h.id) : ""}
 <h3>${esc(h.reason ?? "Aviso")}</h3>
 <p><span class="tag ${h.reason_type === "reserva" || h.reason_type === "compra_inmediata" || h.urgency === "alta" ? "t-hot" : ""}">${h.reason_type === "reserva" ? "RESERVA 500€" : h.reason_type === "compra_inmediata" ? "Compra inmediata" : h.urgency === "alta" ? "Urgente" : "Normal"}</span></p>
 <p>Cliente: <b>${esc(h.lead_name ? `${h.lead_name} (${h.lead_phone ?? "sin teléfono"})` : h.lead_phone ?? "sin contacto")}</b> · ${esc(fmtDate(h.created_at))}</p>${h.notes ? `<p>${esc(h.notes)}</p>` : ""}
@@ -979,6 +1018,19 @@ crm.post("/avisos/:id", (req, res) => {
   h.status = "done";
   save("handoffs", items);
   back(res, "/crm/pendientes", "Aviso atendido");
+});
+
+// Borrado masivo de avisos (18/10/2026, "el borrar masivo lo quiero en
+// todas las secciones") -- solo administrador, papelera recuperable.
+crm.post("/avisos-masivo", (req, res) => {
+  if (me(res).role !== "admin") return back(res, "/crm/pendientes", "Solo el administrador puede eliminar avisos");
+  const ids = ([] as string[]).concat(req.body.ids ?? []);
+  if (ids.length === 0) return back(res, "/crm/pendientes", "No seleccionaste ningún aviso");
+  const items = list<Handoff>("handoffs");
+  const targets = items.filter((h) => ids.includes(h.id));
+  for (const h of targets) moveToTrash("handoffs", h, `Aviso: ${h.reason ?? "sin motivo"} (${h.lead_name ?? h.lead_phone ?? "sin contacto"})`, me(res).email);
+  save("handoffs", items.filter((h) => !ids.includes(h.id)));
+  back(res, "/crm/pendientes", targets.length === 0 ? "No había nada que hacer" : `${targets.length} aviso(s) movido(s) a la papelera`);
 });
 
 crm.post("/correos/:id", async (req, res) => {
@@ -1084,6 +1136,20 @@ function bulkBar(base: string, f: MsgFilter, q: string, count: number, withAnswe
 }
 function msgCheckbox(base: string, id: string): string {
   return `<input class="msgsel" type="checkbox" name="ids" value="${esc(id)}" form="${base}-bulk" style="position:absolute;top:18px;right:20px">`;
+}
+// Versión simple del bulkbar para secciones sin estados de leído/archivado
+// (Visitas, Reservas, Avisos, Clientes) -- a petición real, 18/10/2026:
+// "el borrar masivo lo quiero en todas las secciones". Solo seleccionar
+// todos + eliminar seleccionados (papelera recuperable), nada de filtros.
+function simpleBulkBar(formId: string, action: string, count: number, confirmMsg: string): string {
+  return `<form id="${formId}" method="post" action="${action}"></form>
+<div class="bulkbar">
+<label><input class="msgsel" type="checkbox" onchange="toggleAllMsgs(this,'ids')"> Seleccionar todos (${count})</label>
+<button class="btn danger" type="submit" form="${formId}" name="accion" value="eliminar_seleccionados" onclick="return confirm('${esc(confirmMsg).replace(/'/g, "\\'")}')">Eliminar seleccionados</button>
+</div>`;
+}
+function simpleCheckbox(formId: string, id: string): string {
+  return `<input class="msgsel" type="checkbox" name="ids" value="${esc(id)}" form="${formId}" style="position:absolute;top:18px;right:20px">`;
 }
 // Ejecuta la acción masiva sobre una colección genérica -- compartido por
 // Correos/WhatsApp/Llamadas. `label` sirve para la Papelera.
