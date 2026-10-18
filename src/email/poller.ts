@@ -3,6 +3,18 @@ import { processInboundEmail } from "./agent.js";
 
 const INTERVAL_MS = 3 * 60 * 1000;
 const BATCH = 10;
+// FALLO REAL grave detectado (18/10/2026, a petición de "ajusta el agente
+// de gmail para que cumpla tiempos para que no sea baneado"): este bucle
+// procesaba el lote entero sin ninguna pausa -- una clienta real (Diana,
+// confirmada en el buzón de salida real) escribió varios mensajes seguidos
+// por el chat de Coches.net y el agente le contestó bien, pero con envíos
+// de correo prácticamente seguidos (en un caso, 1 segundo de diferencia
+// entre dos envíos al mismo cliente). El contenido era correcto, pero ese
+// patrón de ráfaga es exactamente lo que los sistemas antiabuso de Gmail
+// penalizan, sin importar que el contenido tenga sentido. Una cuenta de
+// Gmail normal (no Workspace) es especialmente sensible a la velocidad de
+// envío, más que al volumen total. Espaciar cada envío es la defensa real.
+const SEND_SPACING_MS = 8000;
 let running = false;
 
 // Revisa la bandeja del negocio cada 3 minutos. Sin Google conectado no hace nada.
@@ -14,8 +26,9 @@ export function startEmailPoller() {
     running = true;
     try {
       const list = await gmailListUnread();
-      for (const item of list.slice(0, BATCH)) {
-        const m = await gmailGet(item.id);
+      const items = list.slice(0, BATCH);
+      for (let i = 0; i < items.length; i++) {
+        const m = await gmailGet(items[i].id);
         await processInboundEmail({
           messageKey: m.id,
           from: m.from,
@@ -26,6 +39,7 @@ export function startEmailPoller() {
           inReplyTo: m.messageId,
           automated: m.automated,
         });
+        if (i < items.length - 1) await new Promise((r) => setTimeout(r, SEND_SPACING_MS));
       }
     } catch (err) {
       console.error("[email] poll:", err);

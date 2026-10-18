@@ -34,6 +34,24 @@ type Outbox = {
 const MAX_PROCESSED_KEPT = 2000;
 const SIGNATURE = "Automóviles Lucero";
 
+// Tope diario de correos automáticos (18/10/2026, mismo encargo que el
+// espaciado del poller: "que cumpla tiempos para que no sea baneado por
+// Gmail"). Una cuenta de Gmail normal (no Workspace) no tiene un límite
+// publicado tan generoso como Workspace -- un pico real de correos (una
+// avería del feed, una promoción que dispara contactos) podría mandar
+// decenas de respuestas casi idénticas en poco tiempo. Por encima de este
+// tope, el correo se redacta igual mente pero se deja en Pendientes para
+// que el equipo lo revise y lo mande a mano, igual que ya hace el modo de
+// prueba -- nunca se bloquea al cliente, solo se frena el automatismo.
+const DAILY_SEND_CAP = Number(process.env.GMAIL_DAILY_SEND_CAP ?? 60);
+
+function sentTodayCount(): number {
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Madrid" });
+  return readCollection<Outbox>("email_outbox").filter(
+    (o) => o.status === "sent" && o.created_at.slice(0, 10) === today,
+  ).length;
+}
+
 function replySubject(subject: string): string {
   if (!subject.trim()) return "Re: su consulta";
   return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
@@ -251,6 +269,13 @@ export async function processInboundEmail(email: InboundEmail): Promise<{ outcom
     recordInbox(email, "modo_prueba_sin_envio", { portal: portalInfo.portal, draftNote: body });
     writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "modo_prueba_sin_envio", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
     return { outcome: "modo_prueba_sin_envio", reply: body };
+  }
+
+  if (sentTodayCount() >= DAILY_SEND_CAP) {
+    recordInbox(email, "tope_diario_alcanzado", { portal: portalInfo.portal, draftNote: body });
+    writeCollection("email_processed", [...processed, { key: `${email.from}|${email.messageKey}`, at: new Date().toISOString(), outcome: "tope_diario_alcanzado", threadId: email.threadId }].slice(-MAX_PROCESSED_KEPT));
+    raiseAlert({ kind: "gestion_portal", reason: `Se alcanzó el tope diario de ${DAILY_SEND_CAP} correos automáticos -- "${email.subject}" quedó sin enviar, respuesta ya redactada.`, draft_note: body });
+    return { outcome: "tope_diario_alcanzado", reply: body };
   }
 
   const delivery = await deliverEmail(

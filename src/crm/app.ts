@@ -840,8 +840,9 @@ ${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` 
 <h3>${esc(m.subject || "(sin asunto)")}</h3>
 <p>De: <b>${esc(m.from)}</b>${m.portal ? ` · <span class="tag">${esc(m.portal)}</span>` : ""} · ${esc(fmtDate(m.created_at))}</p>
 ${m.outcome === "pendiente_gestion_portal" ? `<p><b>Hay que responder desde ${esc(m.portal ?? "el portal")}, no por correo</b> -- este correo es solo un aviso, al comprador no le llega una respuesta aquí.</p>` : ""}
+${m.outcome === "tope_diario_alcanzado" ? `<p><b>Hoy ya se alcanzó el tope de correos automáticos</b> -- por seguridad (para que Gmail no bloquee la cuenta por enviar de más), esta respuesta no se mandó sola. Revísala y envíala tú.</p>` : ""}
 <div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
-${m.draft_note ? `<p style="margin-top:10px"><b>Borrador para copiar en ${esc(m.portal ?? "el portal")}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
+${m.draft_note ? `<p style="margin-top:10px"><b>${m.outcome === "tope_diario_alcanzado" ? "Respuesta ya redactada" : `Borrador para copiar en ${esc(m.portal ?? "el portal")}`}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
 <form method="post" action="/crm/correos/${esc(m.id)}">
 <label>Tu respuesta (si no escribes nada, no se envía nada)</label>
 <textarea name="respuesta" rows="4"></textarea>

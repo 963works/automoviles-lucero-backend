@@ -171,8 +171,20 @@ export function extractCochesNetContact(
 export type PortalInfo = { portal: string | null; mustManageOnPortal: boolean };
 
 export function detectPortal(input: { from: string; subject: string; text: string }): PortalInfo {
-  const hay = `${input.from}\n${input.subject}\n${input.text}`;
-  const found = PORTAL_SENDERS.find((p) => p.match.test(hay));
+  // FALLO REAL grave detectado (18/10/2026, a petición de "hay algunos
+  // correos de clientes que no esta respondiendo"): antes se buscaba
+  // "milanuncios"/"wallapop" en TODO el correo (remitente + asunto + cuerpo
+  // ENTERO, incluido el bloque JSON de metadatos al final). Los avisos
+  // reales de vehiculosocasion@coches.net llevan "origin":{"source":
+  // "milanuncios"} cuando el anuncio también se publicó ahí -- eso bastaba
+  // para que el correo se etiquetara "Milanuncios" y decideInterest lo
+  // descartara sin contestar, aunque el remitente real (coches.net) SÍ
+  // entrega las respuestas de verdad. Confirmado real: Luis Fernando,
+  // felix, Mohamed, jose anto... (5 clientes reales con nombre y teléfono)
+  // nunca contactados por este motivo. Lo que importa es por DÓNDE vamos a
+  // contestar (el remitente real del correo), no de qué anuncio habla el
+  // texto -- por eso ahora solo se mira el remitente.
+  const found = PORTAL_SENDERS.find((p) => p.match.test(input.from));
   // FALLO REAL grave detectado (15/10/2026, confirmado con el propio rebote de
   // Wallapop): cada respuesta por correo a una notificación de Wallapop volvía
   // automáticamente con "Este correo electrónico no está habilitado como canal
