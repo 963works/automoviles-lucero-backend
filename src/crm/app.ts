@@ -750,15 +750,24 @@ crm.get("/", (req, res) => {
       (me(res).role === "admin" ? simpleBulkBar("alertas-bulk", "/crm/alertas-masivo", alerts.length, "¿Eliminar las alertas seleccionadas? Úsalo solo para pruebas; se pueden recuperar luego desde la Papelera.") : "") +
       alerts
         .map(
-          (a) => `<div class="card" style="position:relative"><div class="info">
+          (a) => {
+            // La razón a veces trae un enlace wa.me incrustado como texto
+            // plano (encargo real, 18/10/2026: "esto se ve feo porque sale
+            // asi") -- se extrae y se muestra como botón real de WhatsApp,
+            // en vez de una URL suelta dentro del párrafo.
+            const waLink = extractWaLink(a.reason);
+            const reasonClean = waLink ? a.reason.replace(waLink, "").replace(/\s*[:.]\s*$/, "").trim() : a.reason;
+            return `<div class="card" style="position:relative"><div class="info">
 ${me(res).role === "admin" ? simpleCheckbox("alertas-bulk", a.id) : ""}
 <h3>${esc(a.name || a.lead_phone || "Cliente sin nombre")}</h3>
-<p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : a.kind === "reserva_pendiente" ? "R" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : a.kind === "reserva_pendiente" ? "RESERVA 500€" : "Urgente"}</span> ${esc(a.reason)}</p>
+<p><span class="tletra t-hot">${a.kind === "lead_caliente" ? "C" : a.kind === "reserva_pendiente" ? "R" : "!"}</span><span class="tag t-hot">${a.kind === "lead_caliente" ? "Caliente" : a.kind === "reserva_pendiente" ? "RESERVA 500€" : "Urgente"}</span> ${esc(fmtDate(a.created_at))}</p>
+<p>${esc(reasonClean)}</p>
 <p>Aviso por correo: ${esc(emailLabels[a.email_status] ?? a.email_status)}</p>
-${phoneLink(a.lead_phone)}
+${phoneLink(a.lead_phone)}${waLink ? waButton(waLink.replace("https://wa.me/", ""), "") : ""}
 <form method="post" action="/crm/alertas/${esc(a.id)}" style="display:inline"><button class="btn ok" type="submit">Ya le he llamado</button></form>
 ${me(res).role === "admin" ? `<form method="post" action="/crm/alertas/${esc(a.id)}" style="display:inline"><button class="btn danger" type="submit" name="accion" value="eliminar" onclick="return confirm('¿Eliminar esta alerta para siempre? Úsalo solo para pruebas.')">Eliminar</button></form>` : ""}
-</div></div>`,
+</div></div>`;
+          },
         )
         .join("")
     : "";
