@@ -259,6 +259,13 @@ function waButton(contact: string | null | undefined, message: string): string {
   if (!num) return "";
   return `<a class="btn ok" target="_blank" rel="noopener" href="https://wa.me/${num}?text=${encodeURIComponent(message)}">Escribir por WhatsApp</a>`;
 }
+// El borrador de "pendiente_whatsapp_manual" ya trae el enlace wa.me real
+// incrustado en el texto (email/agent.ts) -- se extrae solo para mostrarlo
+// como botón real, en vez de obligar a leer/copiar el enlace a mano.
+function extractWaLink(note: string | null | undefined): string | null {
+  const m = note?.match(/https:\/\/wa\.me\/\d+/);
+  return m ? m[0] : null;
+}
 function confirmButton(label: string, action: string, extra: string, question: string): string {
   return `<button class="btn ${extra}" name="accion" value="${esc(action)}" onclick="return confirm('${esc(question)}')">${esc(label)}</button>`;
 }
@@ -946,6 +953,7 @@ ${mails.length === 0 ? `<div class="empty">No hay correos por contestar.</div>` 
 <p>De: <b>${esc(m.from)}</b>${m.portal ? ` · <span class="tag">${esc(m.portal)}</span>` : ""} · ${esc(fmtDate(m.created_at))}</p>
 ${m.outcome === "pendiente_gestion_portal" ? `<p><b>Hay que responder desde ${esc(m.portal ?? "el portal")}, no por correo</b> -- este correo es solo un aviso, al comprador no le llega una respuesta aquí.</p>` : ""}
 ${m.outcome === "tope_diario_alcanzado" ? `<p><b>Hoy ya se alcanzó el tope de correos automáticos</b> -- por seguridad (para que Gmail no bloquee la cuenta por enviar de más), esta respuesta no se mandó sola. Revísala y envíala tú.</p>` : ""}
+${m.outcome === "pendiente_whatsapp_manual" ? `<p><b>Este cliente pidió que le escriban solo por WhatsApp</b> -- el envío automático falló (todavía no hay un número real conectado y verificado), hace falta escribirle a mano.${extractWaLink(m.draft_note) ? ` ${waButton(extractWaLink(m.draft_note)!.replace("https://wa.me/", ""), "")}` : ""}</p>` : ""}
 <div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
 ${m.draft_note ? `<p style="margin-top:10px"><b>${m.outcome === "tope_diario_alcanzado" ? "Respuesta ya redactada" : `Borrador para copiar en ${esc(m.portal ?? "el portal")}`}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
 <form method="post" action="/crm/correos/${esc(m.id)}">
@@ -1125,6 +1133,9 @@ ${msgCheckbox("/crm/correos", m.id)}
 <h3>${esc(m.subject || "(sin asunto)")}</h3>
 <p class="meta">De: <b>${esc(m.from)}</b> · ${platformTag(m.portal)} · ${esc(fmtDate(m.created_at))}</p>
 <p>${answeredTag(m)}${m.archived ? ` <span class="tag">Archivado</span>` : ""}</p>
+${m.outcome === "pendiente_gestion_portal" ? `<p><b>Hay que responder desde ${esc(platformLabel(m.portal))}, no por correo</b> -- este correo es solo un aviso, al comprador no le llega una respuesta aquí.</p>` : ""}
+${m.outcome === "tope_diario_alcanzado" ? `<p><b>Hoy ya se alcanzó el tope de correos automáticos</b> -- por seguridad (para que Gmail no bloquee la cuenta por enviar de más), esta respuesta no se mandó sola. Revísala y envíala tú.</p>` : ""}
+${m.outcome === "pendiente_whatsapp_manual" ? `<p><b>Este cliente pidió que le escriban solo por WhatsApp</b> -- el envío automático falló (todavía no hay un número real conectado y verificado), hace falta escribirle a mano.${extractWaLink(m.draft_note) ? ` ${waButton(extractWaLink(m.draft_note)!.replace("https://wa.me/", ""), "")}` : ""}</p>` : ""}
 <div class="box" style="background:#f7f8fa;white-space:pre-wrap;font-size:19px">${esc(m.text)}</div>
 ${m.draft_note ? `<p style="margin-top:10px"><b>${m.outcome === "tope_diario_alcanzado" ? "Respuesta ya redactada" : `Borrador para copiar en ${esc(platformLabel(m.portal))}`}:</b></p><div class="box" style="background:#eef6ec;white-space:pre-wrap;font-size:19px">${esc(m.draft_note)}</div>` : ""}
 <form method="post" action="/crm/correos/${esc(m.id)}">
