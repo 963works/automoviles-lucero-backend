@@ -191,9 +191,14 @@ function findLeadByContact(contact: string): Lead | undefined {
 function contactLabel(phone: string | null | undefined, name: string | null | undefined): string {
   if (name) return name;
   if (!phone) return "Cliente sin contacto";
-  if (!isCochesNetRelay(phone)) return phone;
+  // Se mira primero si ya hay un nombre real guardado en Clientes para este
+  // mismo contacto (19/10/2026, "pon toda la información") -- antes solo se
+  // miraba en los casos de correo-relay de Coches.net, así que un teléfono
+  // normal con nombre ya conocido (p. ej. añadido a mano en una reserva) se
+  // seguía mostrando como número suelto en vez de su nombre real.
   const lead = findLeadByContact(phone);
   if (lead?.name) return lead.name;
+  if (!isCochesNetRelay(phone)) return phone;
   if (lead?.vehicle_interest) return `Interesado/a en ${lead.vehicle_interest}`;
   return "Cliente de Coches.net (sin nombre)";
 }
@@ -946,6 +951,7 @@ crm.get("/reservas", (req, res) => {
 <p class="sub">Una reserva aparta un coche con 500 €. Cuando el cliente paga, compruébalo y pulsa "Confirmar la reserva".</p>
 <div class="box"><h3 style="margin-top:0">Hacer una reserva a mano</h3>
 <form method="post" action="/crm/reservas">
+<label>Nombre del cliente</label><input name="nombre" placeholder="Si no lo escribes, queda sin nombre en el CRM">
 <label>Coche</label><select name="vehicle_id">${available.map((v) => option(v.id, `${vehicleName(v.id)} · ${priceOf(v.id)} €`, "")).join("")}</select>
 <label>Teléfono o correo del cliente</label><input name="contacto" required>
 <button class="btn ok" type="submit">Crear la reserva</button></form></div>
@@ -957,7 +963,39 @@ ${reservations.length === 0 ? `<div class="empty">Todavía no hay reservas.</div
 crm.post("/reservas", (req, res) => {
   const vehicleId = String(req.body.vehicle_id ?? "");
   const contacto = String(req.body.contacto ?? "").trim();
+  const nombre = String(req.body.nombre ?? "").trim();
   if (!vehicleId || !contacto) return back(res, "/crm/reservas", "Elige un coche y escribe el contacto del cliente");
+  // A petición real (19/10/2026, "pon toda la información para crear una
+  // reserva"): si se escribe un nombre, se guarda en Clientes (nuevo o
+  // completando uno ya existente que no lo tuviera) -- así la reserva no
+  // se queda con un contacto sin nombre en ningún sitio del CRM, igual
+  // que ya hace el alta manual de Clientes.
+  if (nombre) {
+    const leads = list<Lead>("leads");
+    const existing = leads.find((l) => l.phone === contacto);
+    if (existing) {
+      if (!existing.name) {
+        existing.name = nombre;
+        existing.updated_at = now();
+        save("leads", leads);
+      }
+    } else {
+      leads.push({
+        id: crypto.randomUUID(),
+        phone: contacto,
+        name: nombre,
+        notes: null,
+        channel: "MANUAL",
+        origin: "MANUAL",
+        vehicle_interest: vehicleId ? vehicleName(vehicleId) : null,
+        temperature: "WARM",
+        followup_count: 0,
+        do_not_contact: false,
+        created_at: now(),
+      });
+      save("leads", leads);
+    }
+  }
   const result = createReservationPending({ vehicle_id: vehicleId, lead_phone: contacto }) as unknown as { status: string };
   if (result.status !== "ok") return back(res, "/crm/reservas", "Ese coche no está disponible para reservar");
   back(res, "/crm/reservas", "Reserva creada. Espera el pago de 500 €");
