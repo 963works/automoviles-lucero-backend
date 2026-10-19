@@ -1,9 +1,57 @@
 import { appendToCollection, readCollection } from "../store.js";
 import { envelope } from "../response.js";
 import { raiseAlert } from "../alerts/alerts.js";
+import { currentVehicles } from "../data/vehicles-current.js";
+import { createReservationPending } from "./reservations.js";
 
 function now() {
   return new Date().toISOString();
+}
+
+function normalizeText(s: string) {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+}
+
+// Auto-crea la reserva real a partir de "reason_type:reserva" (18/10/2026,
+// "es una automatizacion, no nada para hacer a mano" -- causa real
+// confirmada en producción: varios clientes de chat/correo/WhatsApp
+// confirmaron que querían reservar y solo quedó el aviso, nunca la reserva
+// de verdad, porque nadie -- ni el agente, ni una persona -- llamaba
+// después a create_reservation_pending). Vive aquí, no en n8n ni en un
+// canal concreto, porque las tres vías (voz, chat, WhatsApp, correo)
+// pasan todas por este mismo create_handoff -- es el único sitio que las
+// cubre todas a la vez sin duplicar lógica por canal.
+//
+// Solo actúa cuando está seguro: el coche tiene que identificarse con una
+// coincidencia única contra el catálogo real a partir de lo que ya tenía
+// guardado el propio lead (vehicle_interest) -- nunca inventa ni adivina
+// un vehicle_id. Si hay cero o varias coincidencias, no hace nada y el
+// aviso humano sigue su curso normal (de ahí puede resolverse a mano).
+// Tampoco duplica: si ya hay una reserva viva para ese mismo coche y
+// contacto, no crea otra.
+export function tryAutoCreateReservation(leadPhone: string, vehicleInterest: string | null | undefined): void {
+  try {
+    if (!vehicleInterest || !vehicleInterest.trim()) return;
+    const wanted = normalizeText(vehicleInterest);
+    const matches = currentVehicles().filter((v) => {
+      const full = normalizeText(`${v.make} ${v.model} ${v.version}`);
+      return full.includes(wanted) || wanted.includes(full);
+    });
+    if (matches.length !== 1) return; // ambiguo o sin match -- no se adivina
+    const vehicleId = matches[0].id;
+
+    const existing = readCollection<{ vehicle_id: string; lead_phone: string | null; status: string }>("reservations");
+    const alreadyPending = existing.some(
+      (r) => r.vehicle_id === vehicleId && r.lead_phone === leadPhone && (r.status === "pending_payment" || r.status === "pending_verification" || r.status === "confirmed"),
+    );
+    if (alreadyPending) return; // ya está, no duplicar
+
+    createReservationPending({ vehicle_id: vehicleId, lead_phone: leadPhone });
+  } catch (err) {
+    // Nunca debe romper la creación del aviso -- si esto falla, el aviso
+    // humano ya quedó registrado de todas formas y el equipo lo resuelve.
+    console.error("[requests] no se pudo auto-crear la reserva desde el aviso:", err instanceof Error ? err.message : err);
+  }
 }
 
 // create_purchase_request: registra una solicitud de tasación (Sección 11).
@@ -70,7 +118,7 @@ export function createHandoff(args: {
   // aviso real -- Ángel, Nissan Qashqai -- se quedó sin nombre en la ficha
   // porque create_handoff nunca lo guardaba, aunque create_lead sí lo tenía
   // bien registrado un segundo antes en la misma llamada).
-  const lead = readCollection<{ phone: string | null; name: string | null }>("leads").find((l) => l.phone === args.lead_phone);
+  const lead = readCollection<{ phone: string | null; name: string | null; vehicle_interest?: string | null }>("leads").find((l) => l.phone === args.lead_phone);
   const handoff = {
     id: crypto.randomUUID(),
     ...args,
@@ -87,6 +135,9 @@ export function createHandoff(args: {
       name: lead?.name ?? null,
       reason: args.reason ?? "Atención urgente",
     });
+  }
+  if (args.reason_type === "reserva" && args.lead_phone) {
+    tryAutoCreateReservation(args.lead_phone, lead?.vehicle_interest);
   }
   return envelope({
     status: "ok",

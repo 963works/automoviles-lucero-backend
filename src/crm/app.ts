@@ -10,6 +10,7 @@ import { getOfficialStatus, setOfficialStatus, type OfficialVehicleStatus } from
 import { deliverEmail } from "../email/agent.js";
 import { pendingAlerts, markAlertDone, deleteAlert } from "../alerts/alerts.js";
 import { moveToTrash, listTrash, restoreFromTrash, purgeFromTrash } from "./trash.js";
+import { tryAutoCreateReservation } from "../tools/requests.js";
 import { isVoiceAgentEnabled, setVoiceAgentEnabled, isEmailAutoSendEnabled, setEmailAutoSendEnabled } from "../tools/agent-toggle.js";
 import { STUDIO_TEMPLATES, findTemplate, VIDEO_ENGINES, VIDEO_STYLES, IMAGE_ENGINES, IMAGE_ASPECT_RATIOS, findVideoEngine, findVideoStyle, findImageEngine } from "../studio/templates.js";
 import { createStudioJob, listStudioJobs, getStudioJob, pollStudioJob, saveUploadedPhoto, absolutePathFor, budgetInfo, type StudioJob } from "../studio/jobs.js";
@@ -1032,6 +1033,18 @@ crm.get("/alertas-activas.json", (_req, res) => {
 crm.get("/pendientes", (req, res) => {
   const isAdmin = me(res).role === "admin";
   const handoffs = list<Handoff>("handoffs").filter((h) => h.status === "requested").sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // Backfill automático (18/10/2026, "es una automatizacion, no nada para
+  // hacer a mano"): cualquier aviso de reserva ya existente que se quedara
+  // sin su reserva real (de antes de este arreglo) se completa solo la
+  // próxima vez que alguien abra Pendientes -- nadie tiene que pulsar nada.
+  // Idempotente (tryAutoCreateReservation no duplica si ya existe), barato
+  // (pocos avisos reales a la vez), y nunca rompe la carga de la página.
+  for (const h of handoffs) {
+    if (h.reason_type === "reserva" && h.lead_phone) {
+      const lead = list<Lead>("leads").find((l) => l.phone === h.lead_phone);
+      tryAutoCreateReservation(h.lead_phone, lead?.vehicle_interest ?? null);
+    }
+  }
   const mails = list<InboxMail>("email_inbox").filter((m) => m.outcome !== "automated_no_reply" && !m.answered).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const body = `<h1>Pendientes</h1>
 <p class="sub">Aquí aparece lo que Miguel no puede resolver solo. Cuando lo hayas atendido, pulsa el botón.</p>
